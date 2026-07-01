@@ -28,7 +28,7 @@ def preprocess_image(image_path, output_path="cleaned_receipt.jpg"):
     return output_path
 
 # The original messy photo
-raw_image_path = "sample7.jpeg"
+raw_image_path = "samples/sample4.jpeg"
 
 try:
     # Run the OpenCV cleaner
