@@ -1,7 +1,7 @@
-export default function App() {
-  return (
-    <div>
-      <h1>Hello</h1>
-    </div>
-  );
+import DashboardScheme from '../pages/DashboardScheme';
+
+function App() {
+  return <DashboardScheme />;
 }
+
+export default App;
