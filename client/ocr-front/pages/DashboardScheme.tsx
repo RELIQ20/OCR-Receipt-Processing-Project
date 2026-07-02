@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { LayoutDashboard, Inbox, Search, Bell, Plus } from "lucide-react";
+import InboxItem from "../components/InboxItem";
 
 export default function DashboardScheme() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -42,11 +43,24 @@ export default function DashboardScheme() {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
+                const handleClick = () => {
+                  setActiveTab(item.id);
+
+                  if (item.id === 'inbox') {
+                    window.history.pushState({}, '', '/pages/receipt-inbox');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }
+
+                  if (item.id === 'dashboard') {
+                    window.history.pushState({}, '', '/');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }
+                };
                 
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={handleClick}
                     className={`group relative flex items-center justify-between w-full px-4 py-3.5 rounded-xl text-sm font-medium transition-all duration-300 text-left focus:outline-none ${
                       isActive ? "text-white font-semibold" : "text-zinc-400 hover:text-zinc-200"
                     }`}
@@ -164,6 +178,8 @@ export default function DashboardScheme() {
               <p className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300 mt-3 tracking-tight font-mono">$14,235.50</p>
             </div>
 
+            <InboxItem />
+            <InboxItem />
           </div>
         </div>
       </main>
