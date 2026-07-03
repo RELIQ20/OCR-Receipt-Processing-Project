@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { LayoutDashboard, Inbox, Search, Bell, Plus } from "lucide-react";
+import { LayoutDashboard, Inbox, Search, Bell, Plus, Image as ImageIcon } from "lucide-react";
 
 export default function DashboardScheme() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -134,10 +134,19 @@ export default function DashboardScheme() {
               <p className="text-xs text-zinc-400 mt-1">Here is your receipt processing overview.</p>
             </div>
             
-            <button className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 font-semibold px-4 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-500/10 hover:shadow-emerald-400/20 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
-              <Plus className="w-4 h-4 stroke-[3]" />
-              Upload Receipt
-            </button>
+            {/* Action Buttons Group */}
+            <div className="flex items-center gap-3">
+              {/* New Gallery Button */}
+              <button className="flex items-center gap-2 bg-zinc-900/60 hover:bg-zinc-800/80 text-zinc-200 hover:text-white border border-zinc-800/80 hover:border-zinc-700 px-4 py-2.5 rounded-xl text-xs font-semibold backdrop-blur-md shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
+                <ImageIcon className="w-4 h-4 text-emerald-400" />
+                View Gallery
+              </button>
+
+              <button className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 font-semibold px-4 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-500/10 hover:shadow-emerald-400/20 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
+                <Plus className="w-4 h-4 stroke-[3]" />
+                Upload Receipt
+              </button>
+            </div>
           </div>
 
           {/* Glassmorphic Metric Cards */}
@@ -161,7 +170,7 @@ export default function DashboardScheme() {
             <div className="relative group overflow-hidden bg-gradient-to-b from-zinc-900/60 to-zinc-900/20 backdrop-blur-md border border-zinc-800/60 p-6 rounded-2xl shadow-xl transition-all duration-300 hover:border-zinc-700/60">
               <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/0 to-emerald-500/[0.02] pointer-events-none" />
               <p className="text-xs font-medium text-zinc-400 tracking-wider uppercase">Processed Value</p>
-              <p className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300 mt-3 tracking-tight font-mono">$14,235.50</p>
+              <p className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300 mt-3 tracking-tight font-mono">₱14,235.50</p>
             </div>
 
           </div>
