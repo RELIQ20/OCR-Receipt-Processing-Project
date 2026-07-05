@@ -2,32 +2,16 @@ import { useState } from 'react';
 import { IoSearch, IoFilter } from "react-icons/io5";
 import { FaCheck } from "react-icons/fa";
 import { MdEdit } from "react-icons/md";
+import type { EditState, ReceiptData, Status } from '../types/receipt';
+import InboxItem from '../components/InboxItem';
 
-type Status = "completed" | "for_review" | "processing";
-
-type EditState = { vendor: string; items: LineItem[]; total: number; tax: number; date: string; time: string; };
-
-interface LineItem {
-  name: string;
-  quantity: number;
-  price: number;
+interface ReceiptInboxProps {
+  onSignOut?: () => Promise<void>;
 }
 
-interface ReceiptData {
-  id: string;
-  receiptImage?: string;
-  vendor: string;
-  items: LineItem[];
-  total: number;
-  tax: number;
-  date: string;
-  time: string;
-  status: Status;
-  confidence: number; // Confidence level (percentage) for the OCR extraction
-}
-
-// Sample data only orayt
-const receipts: ReceiptData[] = [
+export default function ReceiptInbox({ onSignOut }: ReceiptInboxProps) {
+  // Sample data only orayt
+  const receipts: ReceiptData[] = [
   {
     id: "r1", // Unique identifier for the receipt; fetched from database 
     vendor: "Starbucks",
@@ -210,7 +194,6 @@ const receipts: ReceiptData[] = [
   },
 ];
 
-export default function ReceiptInbox() {
   const [search, setSearch]   = useState("");
   const [selected, setSelected] = useState<ReceiptData>(receipts[0]);
   const [editMode, setEditMode] = useState(false);
@@ -224,11 +207,6 @@ export default function ReceiptInbox() {
   });
 
   const filtered = receipts.filter(r => r.vendor.toLowerCase().includes(search.toLowerCase()));
-
-  const B = {
-    green: "#046241",
-    dark: "#103b2d",
-  };
 
   const tBgFor = (s: Status) =>
     s === "completed" ? "bg-castleton" : s === "for_review" ? "bg-saffaron" : "bg-sea";
@@ -261,7 +239,7 @@ export default function ReceiptInbox() {
         <div className="h-2 overflow-hidden rounded-full bg-gray-100">
           <div
             className="h-full rounded-full transition-all"
-            style={{ width: `${value}%`, backgroundColor: B.green }}
+            style={{ width: `${value}%`, backgroundColor: "bg-castleton" }}
           />
         </div>
       </div>
@@ -295,14 +273,22 @@ export default function ReceiptInbox() {
   return (
     <div className="flex h-screen overflow-hidden bg-white">
       <div className="w-80 shrink-0 border-r border-gray-100 flex flex-col bg-white overflow-hidden">
-        <div className="p-4 border-b border-gray-100 shrink-0">
-          <div className="relative">
+        <div className="p-4 border-b border-gray-100 shrink-0 flex items-center justify-between">
+          <div className="relative flex-1">
             <IoSearch size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search receipts…"
               className="w-full pl-8 pr-3 py-2 text-sm bg-gray-50 rounded-lg border border-gray-100 focus:outline-none focus:border-green-300"/>
           </div>
-          <div className="flex items-center justify-between mt-3">
+          <button
+            onClick={() => onSignOut?.()}
+            className="ml-3 px-3 py-2 text-xs text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition"
+          >
+            Sign Out
+          </button>
+        </div>
+        <div className="p-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center justify-between">
             <span className="text-xs text-gray-400">{filtered.length} receipts</span>
             <button className="text-xs flex items-center gap-1 text-gray-400 hover:text-gray-600">
               <IoFilter size={11}/> Filter
@@ -315,22 +301,11 @@ export default function ReceiptInbox() {
           {filtered.map(r => {
             const active = selected.id === r.id;
             return (
-              <button key={r.id} onClick={() => setSelected(r)}
-                className="w-full text-left p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors"
-                style={active ? {borderLeft:`3px solid ${B.green}`,backgroundColor:"#f0f7f3",paddingLeft:"13px"} : {borderLeft:"3px solid transparent"}}>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-12 rounded-lg shrink-0 flex items-center justify-center"
-                    style={{backgroundColor:tBgFor(r.status)}}>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-1">
-                      <p className="text-sm font-semibold truncate" style={{color:B.dark}}>{r.vendor || "Unknown"}</p>
-                      <p className="text-sm font-bold ml-2 shrink-0" style={{color:B.green}}>${r.total.toFixed(2)}</p>
-                    </div>
-                    <p className="text-xs text-gray-400 mb-2">{r.date} · {r.time}</p>
-                  </div>
-                </div>
-              </button>
+              <InboxItem 
+                receipt={r}
+                onClick={() => setSelected(r)} 
+                isActive={active} 
+              />
             );
           })}
         </div>
@@ -341,7 +316,7 @@ export default function ReceiptInbox() {
         <div className="p-6">
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h2 className="text-lg font-bold" style={{ color: B.dark }}>{selected.vendor || "Unknown Vendor"}</h2>
+              <h2 className="text-lg font-bold" style={{ color: "text-castleton" }}>{selected.vendor || "Unknown Vendor"}</h2>
               <p className="text-sm text-gray-400 mt-0.5">{selected.date} at {selected.time}</p>
             </div>
             <div className="flex items-center gap-2 mt-1">
@@ -421,7 +396,7 @@ export default function ReceiptInbox() {
                     ) : (
                       <p
                         className="text-sm font-semibold py-2 px-3 bg-gray-50 rounded-lg"
-                        style={{ color: B.dark }}
+                        style={{ color: "text-castleton" }}
                       >
                         {edit.vendor || "—"}
                       </p>
@@ -445,7 +420,7 @@ export default function ReceiptInbox() {
                     ) : (
                       <p
                         className="text-sm font-semibold py-2 px-3 bg-gray-50 rounded-lg"
-                        style={{ color: B.dark }}
+                        style={{ color: "text-castleton" }}
                       >
                         ${edit.total.toFixed(2)}
                       </p>
@@ -469,7 +444,7 @@ export default function ReceiptInbox() {
                     ) : (
                       <p
                         className="text-sm font-semibold py-2 px-3 bg-gray-50 rounded-lg"
-                        style={{ color: B.dark }}
+                        style={{ color: "text-castleton" }}
                       >
                         ${edit.tax.toFixed(2)}
                       </p>
@@ -532,7 +507,7 @@ export default function ReceiptInbox() {
               <div className="flex gap-3">
                 <button onClick={handleSave}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-                  style={{backgroundColor:B.green}}>
+                  style={{backgroundColor:"bg-castleton"}}>
                   {editMode ? <><MdEdit size={14}/> Save Corrections</> : <><FaCheck size={14}/> Mark as Correct</>}
                 </button>
                 <button className="px-4 py-2.5 rounded-xl text-sm border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors font-medium">

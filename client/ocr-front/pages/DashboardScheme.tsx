@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { LayoutDashboard, Inbox, Search, Bell, Plus } from "lucide-react";
-import InboxItem from "../components/InboxItem";
 
-export default function DashboardScheme() {
+interface DashboardSchemeProps {
+  onSignOut?: () => Promise<void>;
+}
+
+export default function DashboardScheme({ onSignOut }: DashboardSchemeProps) {
   const [activeTab, setActiveTab] = useState("dashboard");
 
   const navItems = [
@@ -130,7 +133,14 @@ export default function DashboardScheme() {
               <Bell className="w-4 h-4" />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-amber-500 rounded-full shadow-[0_0_6px_#f59e0b]" />
             </button>
-            
+
+            <button
+              onClick={() => onSignOut?.()}
+              className="px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/60 rounded-xl transition"
+            >
+              Sign Out
+            </button>
+
             {/* Metallic avatar ring */}
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-zinc-700 via-zinc-800 to-zinc-900 p-[1px] shadow-md">
               <div className="w-full h-full rounded-[11px] bg-emerald-600 flex items-center justify-center font-bold text-white text-sm tracking-wider">
@@ -178,8 +188,6 @@ export default function DashboardScheme() {
               <p className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300 mt-3 tracking-tight font-mono">$14,235.50</p>
             </div>
 
-            <InboxItem />
-            <InboxItem />
           </div>
         </div>
       </main>
