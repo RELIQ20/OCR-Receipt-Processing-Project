@@ -208,12 +208,6 @@ export default function ReceiptInbox({ onSignOut }: ReceiptInboxProps) {
               placeholder="Search receipts…"
               className="w-full pl-8 pr-3 py-2 text-sm bg-gray-50 rounded-lg border border-gray-100 focus:outline-none focus:border-green-300"/>
           </div>
-          <button
-            onClick={() => onSignOut?.()}
-            className="ml-3 px-3 py-2 text-xs text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition"
-          >
-            Sign Out
-          </button>
         </div>
         <div className="p-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center justify-between">
