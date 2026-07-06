@@ -94,7 +94,7 @@ export default function AuthPage({ onAuth }: { onAuth: () => void }){
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [touched, setTouched] = useState<Record<string, boolean>>({});
     const [showPw,  setShowPw]  = useState(false);
-    const [showCf,  setShowCf]  = useState(false);
+    const [showCPw,  setShowCPw]  = useState(false);
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [shake,   setShake]   = useState(false);
@@ -127,7 +127,7 @@ export default function AuthPage({ onAuth }: { onAuth: () => void }){
         setErrors({});
         setTouched({});
         setShowPw(false);
-        setShowCf(false);
+        setShowCPw(false);
     };
 
     useEffect(() => {
@@ -514,16 +514,15 @@ export default function AuthPage({ onAuth }: { onAuth: () => void }){
                                         value={fields.confirm} 
                                         onChange={e => setField("confirm", e.target.value)}
                                         onBlur={() => blur("confirm")} 
-                                        type={showCf ? "text" : "password"}
+                                        type={showCPw ? "text" : "password"}
                                         placeholder="Repeat password"
-                                        className={`${fieldClass("confirm")} pr-10 bg-serpent`}
+                                        className={`${fieldClass("confirm")} bg-serpent`}
                                     />
                                     <button 
                                         type="button" 
-                                        onClick={() => setShowCf(!showCf)}
-                                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                    >
-                                        {showCf ? <FiEyeOff size={15}/> : <FiEye size={15}/>}
+                                        onClick={() => setShowCPw(!showCPw)}
+                                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                        {showCPw ? <FiEyeOff size={15}/> : <FiEye size={15}/>}
                                     </button>
                                 </div>
                                 {errors.confirm && touched.confirm && (
