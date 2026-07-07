@@ -1,4 +1,6 @@
-"use client";
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { LayoutDashboard, Inbox, Search, Bell, Plus, Image as ImageIcon } from "lucide-react";
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -945,274 +947,32 @@ function AccountSwitcher({
               <div className="px-4 py-2.5 border-b border-white/5">
                 <span className="text-[11px] font-semibold text-white/40 tracking-wide">SWITCH ACCOUNT</span>
               </div>
-              {accounts.map((a, i) => (
-                <div key={a.id} className="border-b border-white/5 last:border-0">
-                  <div className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors text-left">
-                    <button
-                      onClick={() => {
-                        onSwitch(i);
-                        setOpen(false);
-                      }}
-                      className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                    >
-                      <div className="w-8 h-8 rounded-full shrink-0" style={{ background: `linear-gradient(135deg, ${a.avatarColor}, ${PALETTE.rust})` }} />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-white truncate">{a.name}</p>
-                        <p className="text-[10px] truncate" style={{ color: ROLE_TONE[a.role] }}>
-                          {a.role} · {a.email || "no login set"}
-                        </p>
-                      </div>
-                    </button>
-                    {i === activeIndex && <Check size={14} style={{ color: PALETTE.amber }} className="shrink-0" />}
-                    <button
-                      onClick={() => {
-                        setEditingId(editingId === a.id ? null : a.id);
-                        setDraftEmail(a.email);
-                        setDraftPassword("");
-                      }}
-                      className="text-white/30 hover:text-white shrink-0"
-                      title="Edit login"
-                    >
-                      <Pencil size={12} />
-                    </button>
-                  </div>
-                  {editingId === a.id && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="px-4 pb-3 space-y-2">
-                      <input
-                        value={draftEmail}
-                        onChange={(e) => setDraftEmail(e.target.value)}
-                        placeholder="Login email"
-                        className="w-full text-xs bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder:text-white/30 outline-none"
-                      />
-                      <input
-                        value={draftPassword}
-                        onChange={(e) => setDraftPassword(e.target.value)}
-                        type="password"
-                        placeholder="New password"
-                        className="w-full text-xs bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder:text-white/30 outline-none"
-                      />
-                      <button
-                        onClick={() => {
-                          onUpdateCredentials(a.id, draftEmail, draftPassword || a.password);
-                          setEditingId(null);
-                        }}
-                        className="text-[11px] font-medium rounded-lg px-3 py-1.5 w-full"
-                        style={{ background: PALETTE.amber, color: PALETTE.deepest }}
-                      >
-                        Save credentials
-                      </button>
-                    </motion.div>
-                  )}
-                </div>
-              ))}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
+            </div>
+          </div>
+        </header>
 
-/* ============================================================================
-   GENERIC PREMIUM SLIDER  (used for Request/Transfer)
-   ========================================================================= */
+        {/* Dashboard Content */}
+        <div className="p-8 max-w-7xl w-full mx-auto space-y-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Welcome Back!</h2>
+              <p className="text-xs text-zinc-400 mt-1">Here is your receipt processing overview.</p>
+            </div>
+            
+            {/* Action Buttons Group */}
+            <div className="flex items-center gap-3">
+              {/* New Gallery Button */}
+              <button className="flex items-center gap-2 bg-zinc-900/60 hover:bg-zinc-800/80 text-zinc-200 hover:text-white border border-zinc-800/80 hover:border-zinc-700 px-4 py-2.5 rounded-xl text-xs font-semibold backdrop-blur-md shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
+                <ImageIcon className="w-4 h-4 text-emerald-400" />
+                View Gallery
+              </button>
 
-function PremiumSlider({
-  leftLabel,
-  rightLabel,
-  leftIcon: LeftIcon,
-  rightIcon: RightIcon,
-  value,
-  onChange,
-  accent,
-}: {
-  leftLabel: string;
-  rightLabel: string;
-  leftIcon: any;
-  rightIcon: any;
-  value: "left" | "right";
-  onChange: (v: "left" | "right") => void;
-  accent: string;
-}) {
-  const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(null);
-
-  const fire = (v: "left" | "right", e: React.MouseEvent<HTMLButtonElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setRipple({ x: e.clientX - rect.left, y: e.clientY - rect.top, key: Date.now() });
-    onChange(v);
-  };
-
-  return (
-    <div className="relative grid grid-cols-2 gap-0 rounded-full p-1 bg-white/5 border border-white/10 overflow-hidden backdrop-blur-md">
-      <motion.div
-        className="absolute top-1 bottom-1 rounded-full"
-        style={{ background: value === "right" ? accent : PALETTE.white, width: "calc(50% - 4px)" }}
-        animate={{ left: value === "left" ? 4 : "calc(50% + 0px)" }}
-        transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      />
-      {(["left", "right"] as const).map((side) => {
-        const Icon = side === "left" ? LeftIcon : RightIcon;
-        const label = side === "left" ? leftLabel : rightLabel;
-        return (
-          <button key={side} onClick={(e) => fire(side, e)} className="relative z-10 flex items-center justify-center gap-2 py-3 text-sm font-medium overflow-hidden">
-            <motion.span
-              animate={value === side ? { y: 0, opacity: 1 } : { y: 2, opacity: 0.7 }}
-              transition={{ type: "spring", stiffness: 300, damping: 22 }}
-              className="flex items-center gap-2"
-              style={{ color: value === side ? PALETTE.deepest : "#ffffffaa" }}
-            >
-              <Icon size={14} /> {label}
-            </motion.span>
-            <AnimatePresence>
-              {ripple && value === side && (
-                <motion.span
-                  key={ripple.key}
-                  className="absolute rounded-full bg-white/40 pointer-events-none"
-                  style={{ left: ripple.x, top: ripple.y, translateX: "-50%", translateY: "-50%" }}
-                  initial={{ width: 0, height: 0, opacity: 0.6 }}
-                  animate={{ width: 160, height: 160, opacity: 0 }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
-                />
-              )}
-            </AnimatePresence>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ============================================================================
-   GRAPH ("Transaction Receipt History") + PIPELINE STATUS
-   ========================================================================= */
-
-function TransactionHistoryChart({ data, accent }: { data: { label: string; value: number }[]; accent: string }) {
-  const width = 720;
-  const height = 200;
-  const padding = 24;
-  const max = Math.max(1, ...data.map((d) => d.value));
-  const min = Math.min(...data.map((d) => d.value));
-
-  const points = data.map((d, i) => ({
-    x: padding + (i / Math.max(1, data.length - 1)) * (width - padding * 2),
-    y: height - padding - ((d.value - min) / (max - min || 1)) * (height - padding * 2),
-    ...d,
-  }));
-
-  const linePath = smoothPath(points);
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48 overflow-visible">
-      <defs>
-        <linearGradient id="historyFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={accent} stopOpacity="0.5" />
-          <stop offset="100%" stopColor={accent} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[0, 1, 2, 3].map((row) => (
-        <line key={row} x1={padding} x2={width - padding} y1={padding + row * ((height - padding * 2) / 3)} y2={padding + row * ((height - padding * 2) / 3)} stroke="rgba(255,255,255,0.06)" />
-      ))}
-      <motion.path key={JSON.stringify(data)} d={areaPath} fill="url(#historyFill)" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }} />
-      <motion.path
-        key={`${JSON.stringify(data)}-line`}
-        d={linePath}
-        fill="none"
-        stroke={PALETTE.white}
-        strokeWidth={2.5}
-        strokeLinecap="round"
-        initial={{ pathLength: 0 }}
-        animate={{ pathLength: 1 }}
-        transition={{ duration: 0.9, ease: "easeOut" }}
-      />
-      {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={3} fill={PALETTE.white} opacity={0.85} />
-      ))}
-      {points.map((p, i) => (
-        <text key={i} x={p.x} y={height - 4} fontSize="11" fill={PALETTE.gray2} textAnchor="middle">
-          {p.label}
-        </text>
-      ))}
-    </svg>
-  );
-}
-
-function PendingReviewStatus({ counts }: { counts: Record<string, number> }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-md px-5 py-4 flex items-center justify-between flex-wrap gap-3">
-      <span className="text-xs font-semibold text-white/40 tracking-wide">PIPELINE STATUS</span>
-      <div className="flex items-center gap-2 flex-wrap">
-        {(Object.keys(PIPELINE_META) as (keyof typeof PIPELINE_META)[]).map((key) => {
-          const s = PIPELINE_META[key];
-          const count = counts[key] ?? 0;
-          return (
-            <motion.div
-              key={key}
-              className="relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shrink-0 overflow-hidden"
-              style={{ background: `${s.tone}1a`, border: `1px solid ${s.tone}40`, color: s.tone }}
-              animate={
-                key === "pending" ? { opacity: [0.6, 1, 0.6] } : key === "complete" ? { boxShadow: [`0 0 0px ${s.tone}00`, `0 0 10px ${s.tone}55`, `0 0 0px ${s.tone}00`] } : {}
-              }
-              transition={{ duration: key === "pending" ? 2.2 : 2.6, repeat: Infinity, ease: "easeInOut" }}
-            >
-              {key === "ongoing" && (
-                <motion.span
-                  className="absolute inset-0"
-                  style={{ background: `linear-gradient(90deg, transparent, ${s.tone}33, transparent)` }}
-                  animate={{ x: ["-100%", "100%"] }}
-                  transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
-                />
-              )}
-              <s.icon size={12} strokeWidth={2} className={`relative ${s.spin ? "animate-spin" : ""}`} />
-              <span className="relative">{s.label}</span>
-              <span className="relative text-white/70">{count}</span>
-            </motion.div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/** Item 16 — horizontal bar chart, one rectangle per receipt, length ∝ amount, colored by status. */
-function StatusUpdateBar({ receipts, onOpen }: { receipts: Receipt[]; onOpen: (id: string) => void }) {
-  const rows = receipts.slice(0, 8);
-  const max = Math.max(1, ...rows.map((r) => r.amount));
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-md px-5 py-4">
-      <span className="text-[11px] font-semibold text-white/40 tracking-wide">STATUS UPDATE BAR</span>
-      <div className="mt-3 space-y-2.5">
-        {rows.length === 0 && <p className="text-xs text-white/30">No receipts uploaded yet.</p>}
-        {rows.map((r) => {
-          const meta = PIPELINE_META[r.status as keyof typeof PIPELINE_META] ?? PIPELINE_META.complete;
-          const pct = Math.max(6, (r.amount / max) * 100);
-          return (
-            <button key={r.id} onClick={() => onOpen(r.id)} className="w-full flex items-center gap-3 group">
-              <span className="text-[11px] text-white/60 w-28 truncate text-left shrink-0">{r.vendor}</span>
-              <div className="flex-1 h-6 rounded-lg bg-white/5 overflow-hidden relative">
-                <motion.div
-                  className="h-full rounded-lg flex items-center px-2"
-                  style={{ background: `${meta.tone}` }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${pct}%` }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
-                >
-                  <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: PALETTE.deepest }}>
-                    {peso(r.amount)}
-                  </span>
-                </motion.div>
-              </div>
-              <span className="text-[10px] font-medium w-16 text-right shrink-0" style={{ color: meta.tone }}>
-                {meta.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+              <button className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 font-semibold px-4 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-500/10 hover:shadow-emerald-400/20 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
+                <Plus className="w-4 h-4 stroke-[3]" />
+                Upload Receipt
+              </button>
+            </div>
+          </div>
 
 /* ============================================================================
    VIEW SWITCHER — Dashboard / Receipt Inbox / Upload New Receipt (item 18)
@@ -1220,38 +980,12 @@ function StatusUpdateBar({ receipts, onOpen }: { receipts: Receipt[]; onOpen: (i
 
 type View = "dashboard" | "inbox";
 
-function ViewSwitcher({
-  view,
-  setView,
-  accent,
-  onUploadClick,
-}: {
-  view: View;
-  setView: (v: View) => void;
-  accent: string;
-  onUploadClick: () => void;
-}) {
-  return (
-    <div className="absolute top-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 rounded-full p-1 bg-white/5 border border-white/10 backdrop-blur-md">
-      {[
-        { key: "dashboard" as View, label: "Dashboard", icon: LayoutGrid },
-        { key: "inbox" as View, label: "Receipt Inbox", icon: InboxIcon },
-      ].map((v) => (
-        <button key={v.key} onClick={() => setView(v.key)} className="relative flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-full transition-colors">
-          {view === v.key && <motion.span layoutId="view-pill" className="absolute inset-0 rounded-full" style={{ background: accent }} transition={{ type: "spring", stiffness: 350, damping: 30 }} />}
-          <v.icon size={13} className="relative z-10" style={{ color: view === v.key ? PALETTE.deepest : "#ffffffaa" }} />
-          <span className="relative z-10" style={{ color: view === v.key ? PALETTE.deepest : "#ffffffaa" }}>
-            {v.label}
-          </span>
-        </button>
-      ))}
-      <div className="w-px h-4 bg-white/15 mx-1" />
-      <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={onUploadClick} className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-full text-white/80 hover:text-white">
-        <UploadCloud size={13} /> Upload New Receipt
-      </motion.button>
-    </div>
-  );
-}
+            {/* Card 3 */}
+            <div className="relative group overflow-hidden bg-gradient-to-b from-zinc-900/60 to-zinc-900/20 backdrop-blur-md border border-zinc-800/60 p-6 rounded-2xl shadow-xl transition-all duration-300 hover:border-zinc-700/60">
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/0 to-emerald-500/[0.02] pointer-events-none" />
+              <p className="text-xs font-medium text-zinc-400 tracking-wider uppercase">Processed Value</p>
+              <p className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300 mt-3 tracking-tight font-mono">₱14,235.50</p>
+            </div>
 
 /* ============================================================================
    ADD-NEW-CARD COLOR PICKER (swatches + exact hex color input)
