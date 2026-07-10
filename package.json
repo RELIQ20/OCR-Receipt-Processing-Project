@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "framer-motion": "^12.42.2",
+    "lenis": "^1.3.25",
+    "lucide-react": "^1.24.0",
+    "rechart": "^0.0.1",
+    "recharts": "^3.9.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3"
+  }
+}
