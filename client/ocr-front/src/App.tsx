@@ -5,16 +5,7 @@ export default function App() {
     <div className="flex h-screen bg-[#0a0a0a] text-white">
       {/* Sidebar - Updated to match image_dc0f83.png */}
       <nav className="w-64 border-r border-white/10 p-6 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-green-900 rounded-xl flex items-center justify-center text-green-400">
-            $
-          </div>
-          <div>
-            <h1 className="font-bold">Receipt AI</h1>
-            <p className="text-sm text-white/50">Lifewood</p>
-          </div>
-        </div>
+       
 
         {/* Navigation Links */}
         <div className="space-y-4">

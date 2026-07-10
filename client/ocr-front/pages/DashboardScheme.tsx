@@ -1,16 +1,13 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { LayoutDashboard, Inbox, Search, Bell, Plus, Image as ImageIcon } from "lucide-react";
-
 import { useCallback, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  LayoutDashboard,
+  Inbox as InboxNav,
   Search,
   RotateCw,
   Moon,
   Sun,
   ArrowUpRight,
-  ArrowDownLeft,
   Plus,
   Loader2,
   ArrowRightCircle,
@@ -24,8 +21,6 @@ import {
   FileImage,
   FileText,
   UploadCloud,
-  LayoutGrid,
-  Inbox as InboxIcon,
   X,
   AlertTriangle,
   Sparkles,
@@ -37,6 +32,8 @@ import {
   Lock,
 } from "lucide-react";
 import { CardCarousel, type CarouselCard } from "./CardCarousel";
+import { ChatAssistant } from "./ChatAssistant";
+import { buildSpendingContext } from "./spendingContext";
 
 /* ============================================================================
    BRAND PALETTE — every color in the app comes from this list only
@@ -66,7 +63,7 @@ const CARD_SWATCHES = [PALETTE.forest, PALETTE.sage, PALETTE.rust, PALETTE.amber
    TYPES
    ========================================================================= */
 
-type ReceiptStatus = "processing" | "ongoing" | "pending" | "complete" | "failed";
+type ReceiptStatus = "processing" | "pending" | "complete" | "failed";
 type PaymentType = "cash" | "online";
 type Role = "Admin" | "User" | "Viewer";
 
@@ -149,6 +146,7 @@ interface Account {
 }
 
 type DateRange = "1m" | "3m" | "6m" | "1y";
+type View = "dashboard" | "inbox";
 
 /* ============================================================================
    MOCK DATA / HELPERS  (swap for your real OCR + API calls)
@@ -177,18 +175,22 @@ const RANGES: { key: DateRange; label: string }[] = [
   { key: "1y", label: "1 Year" },
 ];
 
+/**
+ * Matches the 3-stage lifecycle pipeline from the platform spec:
+ * PROCESSING (spinning loader, 3.0s) -> PENDING (pulsing state, 3.0s) -> COMPLETE (solid pulse confirmation, 2.0s).
+ * `spin` drives the rotating loader, `pulse` drives the Tailwind `animate-pulse` treatment.
+ */
 const PIPELINE_META: Record<
   Exclude<ReceiptStatus, "failed">,
-  { label: string; tone: string; icon: any; spin: boolean }
+  { label: string; tone: string; icon: any; spin: boolean; pulse: boolean }
 > = {
-  processing: { label: "Processing", tone: PALETTE.amber, icon: Loader2, spin: true },
-  ongoing: { label: "Ongoing", tone: PALETTE.gold, icon: ArrowRightCircle, spin: false },
-  pending: { label: "Pending", tone: PALETTE.mist, icon: Clock, spin: false },
-  complete: { label: "Complete", tone: PALETTE.forest, icon: CheckCircle2, spin: false },
+  processing: { label: "Processing", tone: PALETTE.amber, icon: Loader2, spin: true, pulse: false },
+  pending: { label: "Pending", tone: PALETTE.mist, icon: Clock, spin: false, pulse: true },
+  complete: { label: "Complete", tone: PALETTE.forest, icon: CheckCircle2, spin: false, pulse: false },
 };
 const FAILED_TONE = PALETTE.rust;
 
-/** User-facing status choices — deliberately simpler than the internal pipeline (no "ongoing" here). */
+/** User-facing status choices mirror the 3-stage automated pipeline exactly. */
 const STATUS_OPTIONS: { key: ReceiptStatus; label: string }[] = [
   { key: "processing", label: "Processing" },
   { key: "pending", label: "Pending" },
@@ -502,16 +504,22 @@ function UploadScreen({
 function StatusBadge({ status }: { status: ReceiptStatus }) {
   const styles: Record<ReceiptStatus, { label: string; tone: string }> = {
     processing: { label: "Processing", tone: PALETTE.amber },
-    ongoing: { label: "Ongoing", tone: PALETTE.gold },
     pending: { label: "Pending", tone: PALETTE.mist },
     complete: { label: "Complete", tone: PALETTE.forest },
     failed: { label: "Failed", tone: FAILED_TONE },
   };
   const s = styles[status];
   return (
-    <span className="text-[10px] font-medium rounded-full px-2 py-0.5" style={{ color: s.tone, background: `${s.tone}1a`, border: `1px solid ${s.tone}40` }}>
+    <motion.span
+      key={status}
+      initial={status === "complete" ? { scale: 0.85, opacity: 0.5 } : false}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 2, ease: "easeOut" }}
+      className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${status === "pending" ? "animate-pulse" : ""}`}
+      style={{ color: s.tone, background: `${s.tone}1a`, border: `1px solid ${s.tone}40` }}
+    >
       {s.label}
-    </span>
+    </motion.span>
   );
 }
 
@@ -947,45 +955,238 @@ function AccountSwitcher({
               <div className="px-4 py-2.5 border-b border-white/5">
                 <span className="text-[11px] font-semibold text-white/40 tracking-wide">SWITCH ACCOUNT</span>
               </div>
-            </div>
-          </div>
-        </header>
 
-        {/* Dashboard Content */}
-        <div className="p-8 max-w-7xl w-full mx-auto space-y-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-white">Welcome Back!</h2>
-              <p className="text-xs text-zinc-400 mt-1">Here is your receipt processing overview.</p>
-            </div>
-            
-            {/* Action Buttons Group */}
-            <div className="flex items-center gap-3">
-              {/* New Gallery Button */}
-              <button className="flex items-center gap-2 bg-zinc-900/60 hover:bg-zinc-800/80 text-zinc-200 hover:text-white border border-zinc-800/80 hover:border-zinc-700 px-4 py-2.5 rounded-xl text-xs font-semibold backdrop-blur-md shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
-                <ImageIcon className="w-4 h-4 text-emerald-400" />
-                View Gallery
-              </button>
-
-              <button className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 font-semibold px-4 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-500/10 hover:shadow-emerald-400/20 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
-                <Plus className="w-4 h-4 stroke-[3]" />
-                Upload Receipt
-              </button>
-            </div>
-          </div>
+              <div className="max-h-72 overflow-y-auto">
+                {accounts.map((acc, i) => (
+                  <div key={acc.id} className="border-b border-white/5 last:border-0">
+                    {editingId === acc.id ? (
+                      <div className="px-4 py-3 space-y-2">
+                        <input
+                          value={draftEmail}
+                          onChange={(e) => setDraftEmail(e.target.value)}
+                          placeholder="Email"
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                        />
+                        <input
+                          value={draftPassword}
+                          onChange={(e) => setDraftPassword(e.target.value)}
+                          placeholder="Password"
+                          type="password"
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                        />
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={() => {
+                              onUpdateCredentials(acc.id, draftEmail, draftPassword);
+                              setEditingId(null);
+                            }}
+                            className="flex-1 text-[11px] font-medium rounded-lg px-3 py-1.5"
+                            style={{ background: PALETTE.amber, color: PALETTE.deepest }}
+                          >
+                            Save
+                          </button>
+                          <button onClick={() => setEditingId(null)} className="text-[11px] text-white/40 hover:text-white px-3 py-1.5">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-white/[0.03] transition-colors">
+                        <button
+                          onClick={() => {
+                            onSwitch(i);
+                            setOpen(false);
+                          }}
+                          className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
+                        >
+                          <div className="w-7 h-7 rounded-full shrink-0" style={{ background: `linear-gradient(135deg, ${acc.avatarColor}, ${PALETTE.rust})` }} />
+                          <div className="min-w-0">
+                            <p className="text-xs text-white truncate">{acc.name}</p>
+                            <p className="text-[10px]" style={{ color: ROLE_TONE[acc.role] }}>
+                              {acc.role} · •• {acc.last4}
+                            </p>
+                          </div>
+                        </button>
+                        {i === activeIndex && <Check size={13} style={{ color: PALETTE.amber }} className="shrink-0" />}
+                        <button
+                          onClick={() => {
+                            setEditingId(acc.id);
+                            setDraftEmail(acc.email);
+                            setDraftPassword(acc.password);
+                          }}
+                          className="text-white/30 hover:text-white transition-colors shrink-0"
+                          title="Edit credentials"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 /* ============================================================================
-   VIEW SWITCHER — Dashboard / Receipt Inbox / Upload New Receipt (item 18)
+   VIEW TABS — Dashboard / Receipt Inbox pill switcher (sits where the old
+   Request/Transfer slider used to be, above the graph card)
    ========================================================================= */
 
-type View = "dashboard" | "inbox";
+function ViewTabs({ view, setView, accent }: { view: View; setView: (v: View) => void; accent: string }) {
+  const TABS: { key: View; label: string; icon: any }[] = [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "inbox", label: "Inbox", icon: InboxNav },
+  ];
 
-            {/* Card 3 */}
-            <div className="relative group overflow-hidden bg-gradient-to-b from-zinc-900/60 to-zinc-900/20 backdrop-blur-md border border-zinc-800/60 p-6 rounded-2xl shadow-xl transition-all duration-300 hover:border-zinc-700/60">
-              <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/0 to-emerald-500/[0.02] pointer-events-none" />
-              <p className="text-xs font-medium text-zinc-400 tracking-wider uppercase">Processed Value</p>
-              <p className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300 mt-3 tracking-tight font-mono">₱14,235.50</p>
+  return (
+    <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full p-1 backdrop-blur-md">
+      {TABS.map((t) => {
+        const Icon = t.icon;
+        const isActive = view === t.key;
+        return (
+          <button
+            key={t.key}
+            onClick={() => setView(t.key)}
+            className="relative flex items-center gap-1.5 text-xs px-3.5 py-1.5 rounded-full transition-colors"
+            style={{ color: isActive ? PALETTE.deepest : "#ffffff90" }}
+          >
+            {isActive && (
+              <motion.div layoutId="view-switcher-pill" className="absolute inset-0 rounded-full" style={{ background: accent }} transition={{ type: "spring", stiffness: 350, damping: 30 }} />
+            )}
+            <span className="relative flex items-center gap-1.5">
+              <Icon size={13} />
+              {t.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================================
+   UPLOAD BUTTON — top-right corner
+   ========================================================================= */
+
+function UploadButton({ accent, onUploadClick }: { accent: string; onUploadClick: () => void }) {
+  return (
+    <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-end px-6 py-4">
+      <button
+        onClick={onUploadClick}
+        className="flex items-center gap-1.5 text-xs font-medium rounded-full px-4 py-2 shadow-lg backdrop-blur-md"
+        style={{ background: accent, color: PALETTE.deepest }}
+      >
+        <Plus size={13} /> Upload
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================================
+   TRANSACTION HISTORY CHART — smooth SVG line chart
+   ========================================================================= */
+
+function TransactionHistoryChart({ data, accent }: { data: { label: string; value: number }[]; accent: string }) {
+  const W = 640;
+  const H = 180;
+  const PAD = 24;
+  const max = Math.max(1, ...data.map((d) => d.value));
+
+  const points = data.map((d, i) => ({
+    x: data.length > 1 ? PAD + (i * (W - PAD * 2)) / (data.length - 1) : W / 2,
+    y: H - PAD - (d.value / max) * (H - PAD * 2),
+  }));
+
+  const linePath = smoothPath(points);
+  const areaPath = points.length > 0 ? `${linePath} L ${points[points.length - 1].x} ${H - PAD} L ${points[0].x} ${H - PAD} Z` : "";
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 480 }}>
+        <defs>
+          <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={accent} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={accent} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        {areaPath && <path d={areaPath} fill="url(#chartFill)" />}
+        {linePath && <path d={linePath} fill="none" stroke={accent} strokeWidth={2.5} strokeLinecap="round" />}
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={3} fill={accent} />
+        ))}
+        {data.map((d, i) => (
+          <text key={i} x={points[i]?.x ?? 0} y={H - 4} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.35)">
+            {d.label}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/* ============================================================================
+   PENDING REVIEW STATUS — pipeline counts strip
+   ========================================================================= */
+
+function PendingReviewStatus({ counts }: { counts: Record<string, number> }) {
+  const ORDER: (keyof typeof PIPELINE_META)[] = ["processing", "pending", "complete"];
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-md p-4 grid grid-cols-3 gap-3">
+      {ORDER.map((key) => {
+        const meta = PIPELINE_META[key];
+        const Icon = meta.icon;
+        return (
+          <div key={key} className="flex items-center gap-2.5 rounded-2xl bg-white/[0.02] border border-white/5 px-3 py-2.5">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${meta.tone}22` }}>
+              <Icon size={14} color={meta.tone} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
             </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white">{counts[key] ?? 0}</p>
+              <p className="text-[10px] text-white/40 truncate">{meta.label}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================================
+   STATUS UPDATE BAR — recent receipts, quick-open strip
+   ========================================================================= */
+
+function StatusUpdateBar({ receipts, onOpen }: { receipts: Receipt[]; onOpen: (id: string) => void }) {
+  const recent = receipts.slice(0, 8);
+  if (recent.length === 0) return null;
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-md p-4">
+      <p className="text-[11px] font-semibold text-white/40 tracking-wide mb-3">RECENT STATUS UPDATES</p>
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {recent.map((r) => {
+          const meta = PIPELINE_META[r.status as keyof typeof PIPELINE_META] ?? PIPELINE_META.complete;
+          const Icon = meta.icon;
+          return (
+            <button
+              key={r.id}
+              onClick={() => onOpen(r.id)}
+              className="flex items-center gap-2 shrink-0 rounded-full border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] px-3 py-1.5 transition-colors"
+            >
+              <Icon size={11} color={meta.tone} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
+              <span className="text-[11px] text-white/80">{r.vendor}</span>
+              <span className="text-[10px] text-white/30">{peso(r.amount)}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* ============================================================================
    ADD-NEW-CARD COLOR PICKER (swatches + exact hex color input)
@@ -1069,7 +1270,6 @@ export default function Dashboard() {
   const [range, setRange] = useState<DateRange>("6m");
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<View>("dashboard");
-  const [requestTransfer, setRequestTransfer] = useState<"left" | "right">("right");
   const [sidebarFilter, setSidebarFilter] = useState<"all" | "processing" | "pending" | "complete">("all");
   const quickUploadRef = useRef<HTMLInputElement>(null);
 
@@ -1126,9 +1326,9 @@ export default function Dashboard() {
         receiptId: receipt.id,
       });
 
-      advanceReceipt(receipt.id, "ongoing", 3000);
-      advanceReceipt(receipt.id, "pending", 6000);
-      advanceReceipt(receipt.id, "complete", 9000);
+      // 3-stage pipeline per spec section 6: PROCESSING (3.0s) -> PENDING (3.0s) -> COMPLETE.
+      advanceReceipt(receipt.id, "pending", 3000);
+      advanceReceipt(receipt.id, "complete", 6000);
     },
     [accounts, activeAccountIndex, advanceReceipt, pushNotification]
   );
@@ -1209,7 +1409,7 @@ export default function Dashboard() {
   });
 
   const pipelineCounts = useMemo(() => {
-    const counts: Record<string, number> = { processing: 0, ongoing: 0, pending: 0, complete: 0 };
+    const counts: Record<string, number> = { processing: 0, pending: 0, complete: 0 };
     transactions.forEach((t) => {
       if (t.status in counts) counts[t.status] += 1;
     });
@@ -1236,14 +1436,24 @@ export default function Dashboard() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden" style={{ background: PALETTE.deepest }}>
-      <ViewSwitcher view={view} setView={setView} accent={accent} onUploadClick={() => quickUploadRef.current?.click()} />
+      <UploadButton accent={accent} onUploadClick={() => quickUploadRef.current?.click()} />
       <input ref={quickUploadRef} type="file" accept=".jpg,.jpeg,.png,.heic,.pdf,.xlsx,.xls" className="hidden" onChange={(e) => handleQuickUploadFile(e.target.files)} />
       <ToastStack toasts={toasts} onOpenReceipt={openReceipt} />
+      <ChatAssistant
+        accent={accent}
+        currency="PHP"
+        buildContext={() => buildSpendingContext(receipts.filter((r) => r.accountLast4 === account.last4))}
+      />
 
       <AnimatePresence mode="wait">
         {view === "inbox" ? (
-          <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} className="h-full p-6 pt-20">
-            <ReceiptInbox receipts={receipts} selectedReceiptId={selectedReceiptId} onSelect={setSelectedReceiptId} onDelete={deleteReceipt} onReassignStatus={reassignStatus} canManage={canManage} />
+          <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} className="h-full p-6 pt-20 flex flex-col gap-4 min-h-0">
+            <div className="flex justify-center shrink-0">
+              <ViewTabs view={view} setView={setView} accent={accent} />
+            </div>
+            <div className="flex-1 min-h-0">
+              <ReceiptInbox receipts={receipts} selectedReceiptId={selectedReceiptId} onSelect={setSelectedReceiptId} onDelete={deleteReceipt} onReassignStatus={reassignStatus} canManage={canManage} />
+            </div>
           </motion.div>
         ) : (
           <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} className="h-full">
@@ -1289,11 +1499,9 @@ export default function Dashboard() {
                 </div>
 
                 <div className="p-8 space-y-4">
-                  {/* Request/Transfer — upper-center, OUTSIDE the graph card (item 4) */}
+                  {/* Dashboard/Inbox switcher — upper-center, OUTSIDE the graph card (moved here from the top bar) */}
                   <div className="flex justify-center">
-                    <div className="w-64">
-                      <PremiumSlider leftLabel="Request" rightLabel="Transfer" leftIcon={ArrowDownLeft} rightIcon={ArrowUpRight} value={requestTransfer} onChange={setRequestTransfer} accent={accent} />
-                    </div>
+                    <ViewTabs view={view} setView={setView} accent={accent} />
                   </div>
 
                   <motion.div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-md p-6 relative overflow-hidden" whileHover={{ borderColor: `${accent}55` }}>
@@ -1410,7 +1618,7 @@ export default function Dashboard() {
                           <span className="text-sm font-medium text-white">{peso(t.amount)}</span>
                           {meta && (
                             <span className="flex items-center gap-1 text-[9.5px] font-medium rounded-full px-1.5 py-0.5" style={{ color: meta.tone, background: `${meta.tone}1a` }}>
-                              <meta.icon size={9} className={meta.spin ? "animate-spin" : ""} />
+                              <meta.icon size={9} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
                               {meta.label}
                             </span>
                           )}
