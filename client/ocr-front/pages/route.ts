@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 import { NextResponse } from "next/server";
 
 interface ChatTurn {
@@ -14,8 +14,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "missing_message" }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: "missing_gemini_api_key" }, { status: 500 });
+    if (!process.env.GROQ_API_KEY) {
+      return NextResponse.json({ error: "missing_groq_api_key" }, { status: 500 });
     }
 
     const systemInstruction = `You are a personal finance assistant inside a receipt-tracking app.
@@ -28,20 +28,31 @@ say so plainly instead of guessing.
 DATA:
 ${JSON.stringify(context)}`;
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const chat = model.startChat({
-      history: ((history ?? []) as ChatTurn[]).map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+    const messages: Parameters<typeof groq.chat.completions.create>[0]["messages"] = [
+      { role: "system", content: systemInstruction },
+      ...((history ?? []) as ChatTurn[]).map((m) => ({
+        role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+        content: m.content,
       })),
-      generationConfig: { temperature: 0.2 },
+      { role: "user", content: message },
+    ];
+
+    const completion = await groq.chat.completions.create({
+      model: "openai/gpt-oss-120b",
+      messages,
+      temperature: 0.2,
+      max_completion_tokens: 1024,
     });
 
-    const result = await chat.sendMessage(systemInstruction + "\n\nUser question: " + message);
-    return NextResponse.json({ reply: result.response.text() });
+    const reply = completion.choices[0]?.message?.content ?? "I couldn't come up with an answer for that.";
+    return NextResponse.json({ reply });
   } catch (err) {
-    console.error("Gemini chat failed:", err);
-    return NextResponse.json({ error: "chat_failed", details: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
+    console.error("Groq chat failed:", err);
+    return NextResponse.json(
+      { error: "chat_failed", details: err instanceof Error ? err.message : "Unknown error" },
+      { status: 500 }
+    );
   }
 }
