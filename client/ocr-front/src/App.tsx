@@ -1,7 +1,15 @@
+// App.tsx
+import DashboardScheme from '../pages/DashboardScheme';
 export default function App() {
   return (
-    <div>
-      <h1>Hello</h1>
+    <div className="flex h-screen bg-[#0a0a0a] text-white">
+      {/* Sidebar - Updated to match image_dc0f83.png */}
+      
+
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto">
+        <DashboardScheme />
+      </main>
     </div>
   );
 }
