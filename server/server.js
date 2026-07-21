@@ -1,119 +1,119 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const Receipt = require("./models/Receipt");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/lifewooddb";
-let isMongoConnected = false;
-const memoryReceipts = [];
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/lifewood_db";
 
-function seedMemoryReceipts() {
-  if (memoryReceipts.length > 0) return;
-
-  const now = new Date();
-  memoryReceipts.push(
-    {
-      id: "seed_1",
-      vendor: "Starbucks",
-      amount: 420.5,
-      date: new Date(now.getFullYear(), now.getMonth(), 12).toISOString(),
-      category: "Food & Drink",
-      status: "complete",
-      auto: true,
-      paymentMethod: "GCash",
-      paymentType: "online",
-      source: "upload",
-      accountLast4: "5008",
-      contactNumber: "+63 917 555 0192",
-      imagePreview: undefined,
-      lineItems: [
-        { id: "li_seed_1", name: "Latte", qty: 1, price: 180 },
-        { id: "li_seed_2", name: "Blueberry muffin", qty: 1, price: 120.5 },
-      ],
-      timeline: [
-        { label: "Uploaded", time: "09:10", done: true },
-        { label: "OCR scan", time: "Complete", done: true },
-        { label: "AI extraction", time: "Complete", done: true },
-      ],
-    },
-    {
-      id: "seed_2",
-      vendor: "Google Drive",
-      amount: 199.0,
-      date: new Date(now.getFullYear(), now.getMonth(), 8).toISOString(),
-      category: "Subscription",
-      status: "pending",
-      auto: true,
-      paymentMethod: "Visa •• 5008",
-      paymentType: "online",
-      source: "email",
-      accountLast4: "5008",
-      contactNumber: "+63 2 8888 0000",
-      imagePreview: undefined,
-      lineItems: [{ id: "li_seed_3", name: "Storage plan", qty: 1, price: 199 }],
-      timeline: [
-        { label: "Uploaded", time: "13:20", done: true },
-        { label: "OCR scan", time: "Pending", done: false },
-      ],
-    }
+if (!process.env.MONGO_URI) {
+  console.warn(
+    "⚠️  MONGO_URI was not found in the environment. Falling back to a local Mongo URI that likely doesn't exist. " +
+      "Check that server/.env exists, is saved as UTF-8 (not UTF-16), and contains a MONGO_URI= line."
   );
 }
 
-function normalizeReceipt(data) {
+// The Atlas connection string in .env has no database name in its path
+// (mongodb+srv://user:pass@cluster.mongodb.net/?appName=...), which means
+// mongoose would otherwise silently connect to the default "test" database
+// instead of the real "lifewood_db" your data actually lives in. Setting
+// dbName explicitly here fixes that regardless of what's in the URI.
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME || "lifewood_db";
+
+let isMongoConnected = false;
+const memoryReceipts = [];
+
+function normalizeItem(item) {
   return {
-    ...data,
-    lineItems: data.lineItems || [],
-    timeline: data.timeline || [],
+    description: item?.description ?? "",
+    price: Number(item?.price) || 0,
   };
+}
+
+function normalizeReceiptEntry(entry) {
+  return {
+    merchant_name: entry?.merchant_name ?? "Unknown merchant",
+    date: entry?.date ?? "",
+    time: entry?.time ?? "",
+    total_amount: Number(entry?.total_amount) || 0,
+    currency: entry?.currency ?? "PHP",
+    drive_link: entry?.drive_link ?? undefined,
+    items: Array.isArray(entry?.items) ? entry.items.map(normalizeItem) : [],
+  };
+}
+
+/** Always recompute grand_total from the receipts array so edits can't drift out of sync. */
+function normalizeMessage(data) {
+  const receipts = Array.isArray(data?.receipts) ? data.receipts.map(normalizeReceiptEntry) : [];
+  const grand_total = receipts.reduce((sum, r) => sum + r.total_amount, 0);
+
+  return {
+    sender_name: data?.sender_name ?? "Unknown sender",
+    status: data?.status ?? "Processing",
+    source: data?.source ?? "WhatsApp OpenClaw",
+    receipts,
+    grand_total,
+    excel_link: data?.excel_link ?? undefined,
+  };
+}
+
+function toClientShape(doc) {
+  const obj = typeof doc.toObject === "function" ? doc.toObject() : doc;
+  const { _id, __v, ...rest } = obj;
+  return { id: String(_id ?? obj.id), ...rest, createdAt: obj.createdAt, updatedAt: obj.updatedAt };
 }
 
 async function listReceipts() {
   if (isMongoConnected) {
-    const receipts = await Receipt.find({}).sort({ createdAt: -1 });
-    return receipts.map((receipt) => receipt.toObject());
+    const docs = await Receipt.find({}).sort({ createdAt: -1 });
+    return docs.map(toClientShape);
   }
 
-  return memoryReceipts.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+  return memoryReceipts.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 async function createReceipt(data) {
-  const payload = normalizeReceipt(data);
+  const payload = normalizeMessage(data);
 
   if (isMongoConnected) {
-    return Receipt.create(payload);
+    const created = await Receipt.create(payload);
+    return toClientShape(created);
   }
 
-  memoryReceipts.unshift(payload);
-  return payload;
+  const withId = { id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, createdAt: new Date().toISOString(), ...payload };
+  memoryReceipts.unshift(withId);
+  return withId;
 }
 
 async function updateReceipt(id, updates) {
-  const payload = normalizeReceipt({ ...updates });
-
   if (isMongoConnected) {
-    return Receipt.findOneAndUpdate({ id }, payload, {
-      new: true,
-      runValidators: true,
-    });
+    // Merge against the existing document so a partial edit (e.g. just the
+    // status) doesn't wipe out the receipts array.
+    const existing = await Receipt.findById(id);
+    if (!existing) return null;
+    const merged = normalizeMessage({ ...existing.toObject(), ...updates });
+    const updated = await Receipt.findByIdAndUpdate(id, merged, { new: true, runValidators: true });
+    return updated ? toClientShape(updated) : null;
   }
 
-  const index = memoryReceipts.findIndex((receipt) => receipt.id === id);
+  const index = memoryReceipts.findIndex((r) => r.id === id);
   if (index === -1) return null;
-  memoryReceipts[index] = { ...memoryReceipts[index], ...payload };
+  const merged = normalizeMessage({ ...memoryReceipts[index], ...updates });
+  memoryReceipts[index] = { ...memoryReceipts[index], ...merged };
   return memoryReceipts[index];
 }
 
 async function deleteReceipt(id) {
   if (isMongoConnected) {
-    const result = await Receipt.findOneAndDelete({ id });
+    const result = await Receipt.findByIdAndDelete(id);
     return Boolean(result);
   }
 
-  const index = memoryReceipts.findIndex((receipt) => receipt.id === id);
+  const index = memoryReceipts.findIndex((r) => r.id === id);
   if (index === -1) return false;
   memoryReceipts.splice(index, 1);
   return true;
@@ -123,7 +123,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/health", (req, res) => {
-  res.json({ ok: true, message: "Server is running" });
+  res.json({ ok: true, message: "Server is running", mongoConnected: isMongoConnected });
 });
 
 app.get("/api/receipts", async (req, res) => {
@@ -179,13 +179,11 @@ function startServer() {
   });
 }
 
-seedMemoryReceipts();
-
 mongoose
-  .connect(MONGO_URI, { serverSelectionTimeoutMS: 4000 })
+  .connect(MONGO_URI, { serverSelectionTimeoutMS: 4000, dbName: MONGO_DB_NAME })
   .then(() => {
     isMongoConnected = true;
-    console.log("Connected to the LifewoodDB");
+    console.log(`Connected to MongoDB (db: ${MONGO_DB_NAME})`);
     startServer();
   })
   .catch((err) => {
