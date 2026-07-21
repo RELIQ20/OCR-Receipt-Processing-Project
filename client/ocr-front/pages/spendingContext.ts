@@ -1,15 +1,36 @@
 /**
- * Precomputes spending aggregates for a set of receipts so the chat assistant
- * can answer "how much did I spend this week/month/year" reliably, without
- * relying on an LLM to do arithmetic over a raw list.
+ * Precomputes spending aggregates for a set of WhatsApp receipt submissions
+ * so the chat assistant can answer "how much did I spend this week/month/year"
+ * reliably, without relying on an LLM to do arithmetic over raw records.
  */
 
-export interface ReceiptLike {
-  vendor: string;
+export interface ReceiptItemLike {
+  description: string;
+  price: number;
+}
+
+export interface ReceiptEntryLike {
+  merchant_name: string;
+  date: string;
+  time?: string;
+  total_amount: number;
+  currency: string;
+  items?: ReceiptItemLike[];
+}
+
+export interface ReceiptMessageLike {
+  sender_name: string;
+  status: string;
+  receipts: ReceiptEntryLike[];
+  grand_total: number;
+}
+
+export interface FlatReceipt {
+  sender: string;
+  merchant: string;
   amount: number;
   date: string;
-  category: string;
-  status: string;
+  currency: string;
 }
 
 export interface SpendingContext {
@@ -21,10 +42,12 @@ export interface SpendingContext {
     thisYear: number;
     allTime: number;
   };
-  byCategory: Record<string, number>;
-  topVendors: [string, number][];
+  byMerchant: Record<string, number>;
+  bySender: Record<string, number>;
+  topMerchants: [string, number][];
+  topSenders: [string, number][];
   receiptCount: number;
-  receipts: ReceiptLike[];
+  receipts: FlatReceipt[];
 }
 
 function startOfWeek(d: Date): Date {
@@ -36,23 +59,48 @@ function startOfWeek(d: Date): Date {
 /** Cap on raw receipts included verbatim in the prompt, keeps context small. */
 const MAX_RAW_RECEIPTS = 60;
 
-export function buildSpendingContext(receipts: ReceiptLike[], currency = "PHP"): SpendingContext {
+function flattenMessages(messages: ReceiptMessageLike[]): FlatReceipt[] {
+  const flat: FlatReceipt[] = [];
+  messages.forEach((msg) => {
+    msg.receipts.forEach((r) => {
+      flat.push({
+        sender: msg.sender_name,
+        merchant: r.merchant_name,
+        amount: r.total_amount,
+        date: r.date,
+        currency: r.currency,
+      });
+    });
+  });
+  return flat;
+}
+
+export function buildSpendingContext(messages: ReceiptMessageLike[], currency = "PHP"): SpendingContext {
   const now = new Date();
   const weekStart = startOfWeek(now);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const yearStart = new Date(now.getFullYear(), 0, 1);
 
-  const sum = (rs: ReceiptLike[]) => rs.reduce((a, r) => a + r.amount, 0);
-  const inRange = (r: ReceiptLike, from: Date) => new Date(r.date) >= from;
+  const flat = flattenMessages(messages);
 
-  const byCategory: Record<string, number> = {};
-  const byVendor: Record<string, number> = {};
-  receipts.forEach((r) => {
-    byCategory[r.category] = (byCategory[r.category] ?? 0) + r.amount;
-    byVendor[r.vendor] = (byVendor[r.vendor] ?? 0) + r.amount;
+  const sum = (rs: FlatReceipt[]) => rs.reduce((a, r) => a + r.amount, 0);
+  const inRange = (r: FlatReceipt, from: Date) => {
+    const d = new Date(r.date);
+    return !Number.isNaN(d.getTime()) && d >= from;
+  };
+
+  const byMerchant: Record<string, number> = {};
+  const bySender: Record<string, number> = {};
+  flat.forEach((r) => {
+    byMerchant[r.merchant] = (byMerchant[r.merchant] ?? 0) + r.amount;
+    bySender[r.sender] = (bySender[r.sender] ?? 0) + r.amount;
   });
 
-  const topVendors = Object.entries(byVendor)
+  const topMerchants = Object.entries(byMerchant)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5) as [string, number][];
+
+  const topSenders = Object.entries(bySender)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5) as [string, number][];
 
@@ -60,18 +108,19 @@ export function buildSpendingContext(receipts: ReceiptLike[], currency = "PHP"):
     asOf: now.toISOString(),
     currency,
     totals: {
-      thisWeek: sum(receipts.filter((r) => inRange(r, weekStart))),
-      thisMonth: sum(receipts.filter((r) => inRange(r, monthStart))),
-      thisYear: sum(receipts.filter((r) => inRange(r, yearStart))),
-      allTime: sum(receipts),
+      thisWeek: sum(flat.filter((r) => inRange(r, weekStart))),
+      thisMonth: sum(flat.filter((r) => inRange(r, monthStart))),
+      thisYear: sum(flat.filter((r) => inRange(r, yearStart))),
+      allTime: sum(flat),
     },
-    byCategory,
-    topVendors,
-    receiptCount: receipts.length,
-    receipts: receipts
+    byMerchant,
+    bySender,
+    topMerchants,
+    topSenders,
+    receiptCount: flat.length,
+    receipts: flat
       .slice()
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, MAX_RAW_RECEIPTS)
-      .map((r) => ({ vendor: r.vendor, amount: r.amount, date: r.date, category: r.category, status: r.status })),
+      .slice(0, MAX_RAW_RECEIPTS),
   };
 }
