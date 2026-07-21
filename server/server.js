@@ -7,11 +7,11 @@ const Receipt = require("./models/Receipt");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/lifewooddb";
+const MONGO_URI = process.env.MONGO_URI;
 let isMongoConnected = false;
 const memoryReceipts = [];
 
-function seedMemoryReceipts() {
+///function seedMemoryReceipts() {
   if (memoryReceipts.length > 0) return;
 
   const now = new Date();
@@ -61,7 +61,7 @@ function seedMemoryReceipts() {
       ],
     }
   );
-}
+///}
 
 function normalizeReceipt(data) {
   return {

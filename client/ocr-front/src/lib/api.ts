@@ -1,26 +1,28 @@
-export interface LineItemPayload {
-  id: string;
-  name: string;
-  qty: number;
+export interface ReceiptItemPayload {
+  description: string;
   price: number;
 }
 
-export interface ReceiptPayload {
-  id: string;
-  vendor: string;
-  amount: number;
+export interface ReceiptEntryPayload {
+  merchant_name: string;
   date: string;
-  category: string;
+  time: string;
+  total_amount: number;
+  currency: string;
+  drive_link?: string;
+  items: ReceiptItemPayload[];
+}
+
+export interface ReceiptMessagePayload {
+  id: string;
+  sender_name: string;
   status: string;
-  auto: boolean;
-  paymentMethod: string;
-  paymentType: "cash" | "online";
-  source: "upload" | "camera" | "email";
-  accountLast4: string;
-  contactNumber: string;
-  imagePreview?: string;
-  lineItems: LineItemPayload[];
-  timeline: { label: string; time: string; done: boolean }[];
+  source: string;
+  receipts: ReceiptEntryPayload[];
+  grand_total: number;
+  excel_link?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -38,29 +40,29 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function fetchReceipts(): Promise<ReceiptPayload[]> {
+export async function fetchReceipts(): Promise<ReceiptMessagePayload[]> {
   const response = await fetch("/api/receipts");
-  return handleResponse<ReceiptPayload[]>(response);
+  return handleResponse<ReceiptMessagePayload[]>(response);
 }
 
-export async function createReceipt(receipt: ReceiptPayload): Promise<ReceiptPayload> {
+export async function createReceipt(receipt: Omit<ReceiptMessagePayload, "id" | "createdAt">): Promise<ReceiptMessagePayload> {
   const response = await fetch("/api/receipts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(receipt),
   });
 
-  return handleResponse<ReceiptPayload>(response);
+  return handleResponse<ReceiptMessagePayload>(response);
 }
 
-export async function updateReceipt(id: string, updates: Partial<ReceiptPayload>): Promise<ReceiptPayload> {
+export async function updateReceipt(id: string, updates: Partial<ReceiptMessagePayload>): Promise<ReceiptMessagePayload> {
   const response = await fetch(`/api/receipts/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
 
-  return handleResponse<ReceiptPayload>(response);
+  return handleResponse<ReceiptMessagePayload>(response);
 }
 
 export async function deleteReceipt(id: string): Promise<void> {
