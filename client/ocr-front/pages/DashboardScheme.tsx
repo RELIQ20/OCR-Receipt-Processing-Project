@@ -1,135 +1,139 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { LayoutDashboard, Inbox, Search, Bell, Plus, Image as ImageIcon } from "lucide-react";
+"use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
-  RotateCw,
-  Moon,
-  Sun,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Plus,
-  Loader2,
-  ArrowRightCircle,
-  Clock,
-  CheckCircle2,
-  Mail,
+  LayoutDashboard,
+  Inbox as InboxIcon,
+  RefreshCw,
   Bell,
+  Sun,
+  Moon,
+  Trash2,
+  FileDown,
   ChevronDown,
   Check,
-  Camera,
-  FileImage,
-  FileText,
-  UploadCloud,
-  LayoutGrid,
-  Inbox as InboxIcon,
   X,
-  AlertTriangle,
-  Sparkles,
-  Pencil,
-  Palette,
-  Banknote,
-  CreditCard,
+  FileText,
   Receipt as ReceiptIcon,
-  Lock,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Loader2,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowUpRight,
+  ArrowDownRight,
+  Pencil,
+  ExternalLink,
+  Plus,
+  Users,
 } from "lucide-react";
 import { CardCarousel, type CarouselCard } from "./CardCarousel";
+import { ChatAssistant } from "./ChatAssistant";
+import {
+  createReceipt as createReceiptApi,
+  deleteReceipt as deleteReceiptApi,
+  fetchReceipts as fetchReceiptsApi,
+  updateReceipt as updateReceiptApi,
+  type ReceiptMessagePayload,
+} from "../src/lib/api";
+import { buildSpendingContext } from "./spendingContext";
 
 /* ============================================================================
-   BRAND PALETTE — every color in the app comes from this list only
+   THEME — Castleton green / Saffron / Sea Salt / Paper. One token system,
+   two modes. Every color used below is derived from this object so light
+   and dark stay perfectly in sync.
    ========================================================================= */
 
-const PALETTE = {
-  deepest: "#133020",
-  forest: "#034E34",
-  sage: "#417256",
-  mist: "#708E7C",
-  fog: "#9CAFA4",
-  rust: "#C17110",
-  amber: "#E89131",
-  gold: "#FFB347",
-  peach: "#FFC370",
-  sand: "#F4D0A4",
-  gray1: "#666666",
-  gray2: "#999999",
-  gray3: "#CCCCCC",
-  gray4: "#E6E6E6",
-  white: "#FFFFFF",
-};
+const THEME = {
+  light: {
+    pageBg: "#FBFBF9",
+    barBg: "#00563B",
+    sidebarBg: "#003B28",
+    surface: "#FFFFFF",
+    surfaceAlt: "#F1F6F3",
+    text: "#0F241B",
+    textMuted: "#5C6B65",
+    onBar: "#FFFFFF",
+    onBarMuted: "rgba(255,255,255,0.65)",
+    green: "#00563B",
+    greenDeep: "#003B28",
+    accent: "#F4C430",
+    accentInk: "#3A2A00",
+    border: "rgba(0,86,59,0.12)",
+    danger: "#B3261E",
+    blue: "#3D8BFF",
+    paper: "#F5EEDB",
+  },
+  dark: {
+    pageBg: "#07211A",
+    barBg: "#04160F",
+    sidebarBg: "#04160F",
+    surface: "#0E2E22",
+    surfaceAlt: "#123526",
+    text: "#F5EEDB",
+    textMuted: "rgba(245,238,219,0.62)",
+    onBar: "#F5EEDB",
+    onBarMuted: "rgba(245,238,219,0.55)",
+    green: "#0F6B48",
+    greenDeep: "#04160F",
+    accent: "#F4C430",
+    accentInk: "#2B1E00",
+    border: "rgba(245,238,219,0.12)",
+    danger: "#FF8A80",
+    blue: "#5FA3FF",
+    paper: "#F5EEDB",
+  },
+} as const;
 
-const CARD_SWATCHES = [PALETTE.forest, PALETTE.sage, PALETTE.rust, PALETTE.amber, PALETTE.gold, PALETTE.deepest];
+type ThemeTokens = { [K in keyof typeof THEME.light]: string };
+type Mode = "light" | "dark";
+
+/** Brand gradients cycled across sender cards. */
+const CARD_GRADIENTS = [
+  "linear-gradient(135deg, #00563B 0%, #003624 100%)",
+  "linear-gradient(135deg, #B98A00 0%, #003624 100%)",
+  "linear-gradient(135deg, #3D8BFF 0%, #04160F 100%)",
+  "linear-gradient(135deg, #0F6B48 0%, #003B28 100%)",
+];
 
 /* ============================================================================
-   TYPES
+   TYPES — mirrors the real lifewood_db.receipts document shape written by
+   the WhatsApp OpenClaw bot. One document = one submitted message, which can
+   contain more than one scanned merchant receipt.
    ========================================================================= */
 
-type ReceiptStatus = "processing" | "ongoing" | "pending" | "complete" | "failed";
-type PaymentType = "cash" | "online";
-type Role = "Admin" | "User" | "Viewer";
-
-interface LineItem {
-  id: string;
-  name: string;
-  qty: number;
+interface ReceiptItem {
+  description: string;
   price: number;
 }
 
-interface Receipt {
-  id: string;
-  vendor: string;
-  amount: number;
-  date: string;
-  category: string;
-  status: ReceiptStatus;
-  /** false once a human has manually reassigned status — automatic pipeline timers stop touching it */
-  auto: boolean;
-  paymentMethod: string;
-  paymentType: PaymentType;
-  source: "upload" | "camera" | "email";
-  accountLast4: string;
-  contactNumber: string;
-  imagePreview?: string;
-  lineItems: LineItem[];
-  timeline: { label: string; time: string; done: boolean }[];
+interface ReceiptEntry {
+  merchant_name: string;
+  date: string; // "YYYY-MM-DD"
+  time?: string; // "HH:MM"
+  total_amount: number;
+  currency: string;
+  drive_link?: string;
+  items: ReceiptItem[];
 }
 
-interface Transaction {
+interface ReceiptMessage {
   id: string;
-  receiptId: string;
-  vendor: string;
-  amount: number;
-  date: string;
-  time: string;
-  category: string;
-  status: ReceiptStatus;
-  paymentMethod: string;
-  paymentType: PaymentType;
-  emailSource?: string;
-  accountLast4: string;
-}
-
-/** Permanent ledger entry — written once a receipt completes, never removed on delete. Feeds the graph. */
-interface HistoryEntry {
-  id: string;
-  accountLast4: string;
-  vendor: string;
-  amount: number;
-  date: string;
+  sender_name: string;
+  status: string; // "Processing" | "Pending" | "Confirmed" | "Failed" | ...
+  source: string; // always "WhatsApp OpenClaw"
+  receipts: ReceiptEntry[];
+  grand_total: number;
+  excel_link?: string;
+  createdAt: string;
 }
 
 interface AppNotification {
   id: string;
-  type:
-    | "new_receipt"
-    | "email"
-    | "ocr_complete"
-    | "request_approved"
-    | "transfer_complete"
-    | "processing_failed"
-    | "ai_extraction";
+  type: "new_receipt" | "status_changed" | "processing_failed" | "save_failed";
   title: string;
   detail: string;
   time: string;
@@ -137,38 +141,34 @@ interface AppNotification {
   receiptId?: string;
 }
 
-interface Account {
-  id: string;
-  last4: string;
+interface SenderSummary {
   name: string;
-  role: Role;
-  email: string;
-  password: string;
-  avatarColor: string;
-  balance: number;
+  total: number;
+  currency: string;
+  messageCount: number;
+  receiptCount: number;
+  latestMerchant?: string;
+  latestDate?: string;
+  latestItems?: { name: string; qty: number; price: number }[];
+}
+
+interface FlatRow {
+  messageId: string;
+  sender: string;
+  merchant: string;
+  amount: number;
+  currency: string;
+  date: string;
+  time?: string;
+  status: string;
 }
 
 type DateRange = "1m" | "3m" | "6m" | "1y";
+type View = "dashboard" | "inbox";
 
 /* ============================================================================
-   MOCK DATA / HELPERS  (swap for your real OCR + API calls)
+   HELPERS
    ========================================================================= */
-
-const VENDORS = [
-  { name: "Nike Store", category: "Retail", contact: "+63 917 200 1122" },
-  { name: "WeWork", category: "Workspace", contact: "+63 918 334 5567" },
-  { name: "Google Drive", category: "Subscription", contact: "+63 2 8888 0000" },
-  { name: "Starbucks", category: "Food & Drink", contact: "+63 917 555 0192" },
-  { name: "Jollibee", category: "Food & Drink", contact: "+63 2 8879 8888" },
-  { name: "Delta Airlines", category: "Travel", contact: "+63 2 7902 0100" },
-];
-
-const PAYMENT_METHODS: { label: string; type: PaymentType }[] = [
-  { label: "GCash", type: "online" },
-  { label: "Visa •• 5008", type: "online" },
-  { label: "Cash", type: "cash" },
-  { label: "Mastercard •• 6150", type: "online" },
-];
 
 const RANGES: { key: DateRange; label: string }[] = [
   { key: "1m", label: "1 Month" },
@@ -177,154 +177,127 @@ const RANGES: { key: DateRange; label: string }[] = [
   { key: "1y", label: "1 Year" },
 ];
 
-const PIPELINE_META: Record<
-  Exclude<ReceiptStatus, "failed">,
-  { label: string; tone: string; icon: any; spin: boolean }
-> = {
-  processing: { label: "Processing", tone: PALETTE.amber, icon: Loader2, spin: true },
-  ongoing: { label: "Ongoing", tone: PALETTE.gold, icon: ArrowRightCircle, spin: false },
-  pending: { label: "Pending", tone: PALETTE.mist, icon: Clock, spin: false },
-  complete: { label: "Complete", tone: PALETTE.forest, icon: CheckCircle2, spin: false },
-};
-const FAILED_TONE = PALETTE.rust;
-
-/** User-facing status choices — deliberately simpler than the internal pipeline (no "ongoing" here). */
-const STATUS_OPTIONS: { key: ReceiptStatus; label: string }[] = [
+const STATUS_FILTERS: { key: "all" | string; label: string }[] = [
+  { key: "all", label: "All" },
   { key: "processing", label: "Processing" },
   { key: "pending", label: "Pending" },
-  { key: "complete", label: "Completed" },
+  { key: "confirmed", label: "Confirmed" },
+  { key: "failed", label: "Failed" },
 ];
+
+const STATUS_OPTIONS = ["Processing", "Pending", "Confirmed", "Failed"];
 
 const NOTIF_ICONS: Record<AppNotification["type"], any> = {
   new_receipt: FileText,
-  email: Mail,
-  ocr_complete: CheckCircle2,
-  request_approved: ArrowRightCircle,
-  transfer_complete: ArrowRightCircle,
+  status_changed: CheckCircle2,
   processing_failed: AlertTriangle,
-  ai_extraction: Sparkles,
+  save_failed: AlertTriangle,
 };
 
 function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function nowTime() {
-  return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const CURRENCY_SYMBOLS: Record<string, string> = { PHP: "₱", USD: "$", EUR: "€", JPY: "¥", GBP: "£" };
+
+function formatAmount(n: number, currency = "PHP") {
+  const symbol = CURRENCY_SYMBOLS[currency?.toUpperCase()] ?? `${currency} `;
+  return `${symbol}${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function peso(n: number) {
-  return `₱${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function dateOnly(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function dateAndYear(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+function dateTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function randomLast4() {
-  return String(Math.floor(1000 + Math.random() * 9000));
-}
-
-/** Reads an image file as a data URL for the Receipt Preview thumbnail. Non-image files resolve to undefined. */
-function readImagePreview(file: File): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    if (!file.type.startsWith("image/")) {
-      resolve(undefined);
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : undefined);
-    reader.onerror = () => resolve(undefined);
-    reader.readAsDataURL(file);
-  });
-}
-
-function makeReceipt(opts: {
-  vendor: (typeof VENDORS)[number];
-  amount: number;
-  date: Date;
-  status: ReceiptStatus;
-  source: "upload" | "camera" | "email";
-  accountLast4: string;
-  payment: (typeof PAYMENT_METHODS)[number];
-  imagePreview?: string;
-}): Receipt {
-  const { vendor, amount, date, status, source, accountLast4, payment, imagePreview } = opts;
-  const done = status === "complete";
-  return {
-    id: uid("rcpt"),
-    vendor: vendor.name,
-    amount,
-    date: date.toISOString(),
-    category: vendor.category,
-    status,
-    auto: true,
-    paymentMethod: payment.label,
-    paymentType: payment.type,
-    source,
-    accountLast4,
-    contactNumber: vendor.contact,
-    imagePreview,
-    lineItems: [
-      { id: uid("li"), name: `${vendor.name} item A`, qty: 1, price: Math.round(amount * 0.6 * 100) / 100 },
-      { id: uid("li"), name: `${vendor.name} item B`, qty: 1, price: Math.round(amount * 0.4 * 100) / 100 },
-    ],
-    timeline: [
-      { label: "Uploaded", time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), done: true },
-      { label: "OCR scan", time: done ? "Complete" : "", done },
-      { label: "AI extraction", time: done ? "Complete" : "", done },
-      { label: "Ready for review", time: done ? "Complete" : "", done },
-    ],
+/** Status → color + icon, resolved against the active theme and tolerant of unknown status strings. */
+function statusMeta(t: ThemeTokens, status: string) {
+  const key = (status || "").trim().toLowerCase();
+  const map: Record<string, { label: string; tone: string; icon: any; spin?: boolean; pulse?: boolean }> = {
+    processing: { label: "Processing", tone: t.accent, icon: Loader2, spin: true },
+    pending: { label: "Pending", tone: t.blue, icon: Clock, pulse: true },
+    confirmed: { label: "Confirmed", tone: t.green, icon: CheckCircle2 },
+    complete: { label: "Complete", tone: t.green, icon: CheckCircle2 },
+    failed: { label: "Failed", tone: t.danger, icon: AlertTriangle },
   };
+  return map[key] ?? { label: status || "Unknown", tone: t.textMuted, icon: Clock };
 }
 
-function seedAccounts(): Account[] {
-  return [
-    { id: "acc_1", last4: "5008", name: "Ethan Reynolds", role: "Admin", email: "ethan@lifewood.ai", password: "••••••••", avatarColor: PALETTE.amber, balance: 12850 },
-    { id: "acc_2", last4: "6150", name: "Mika Santos", role: "User", email: "mika.ops@lifewood.ai", password: "••••••••", avatarColor: PALETTE.sage, balance: 6150 },
-    { id: "acc_3", last4: "3140", name: "Carlo Dizon", role: "Viewer", email: "carlo.view@lifewood.ai", password: "••••••••", avatarColor: PALETTE.rust, balance: 3140 },
-  ];
+function flattenReceipts(messages: ReceiptMessage[]): FlatRow[] {
+  const rows: FlatRow[] = [];
+  messages.forEach((m) => {
+    m.receipts.forEach((r) => {
+      rows.push({ messageId: m.id, sender: m.sender_name, merchant: r.merchant_name, amount: r.total_amount, currency: r.currency, date: r.date, time: r.time, status: m.status });
+    });
+  });
+  return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
-/** A handful of historical, already-complete receipts so the graph and lists have real shape on first load. */
-function seedReceipts(accounts: Account[]): Receipt[] {
-  const out: Receipt[] = [];
+function summarizeSenders(messages: ReceiptMessage[]): SenderSummary[] {
+  const sorted = messages.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const map = new Map<string, SenderSummary>();
+
+  sorted.forEach((msg) => {
+    const existing = map.get(msg.sender_name);
+    const entry: SenderSummary = existing ?? {
+      name: msg.sender_name,
+      total: 0,
+      currency: msg.receipts[0]?.currency ?? "PHP",
+      messageCount: 0,
+      receiptCount: 0,
+    };
+    entry.total += msg.grand_total;
+    entry.messageCount += 1;
+    entry.receiptCount += msg.receipts.length;
+    if (!entry.latestMerchant && msg.receipts.length > 0) {
+      const first = msg.receipts[0];
+      entry.latestMerchant = first.merchant_name;
+      entry.latestDate = first.date;
+      entry.latestItems = first.items.map((it) => ({ name: it.description, qty: 1, price: it.price }));
+    }
+    map.set(msg.sender_name, entry);
+  });
+
+  return Array.from(map.values()).sort((a, b) => b.total - a.total);
+}
+
+function buildSeries(flat: { date: string; amount: number }[], range: DateRange) {
   const now = new Date();
-  accounts.forEach((acc, accIdx) => {
-    for (let m = 5; m >= 0; m--) {
-      const count = 1 + ((m + accIdx) % 2);
-      for (let c = 0; c < count; c++) {
-        const vendor = VENDORS[(m + c + accIdx) % VENDORS.length];
-        const payment = PAYMENT_METHODS[(m + c) % PAYMENT_METHODS.length];
-        const day = 3 + c * 9;
-        const date = new Date(now.getFullYear(), now.getMonth() - m, Math.min(day, 27));
-        const amount = Math.round((40 + ((m * 13 + c * 7 + accIdx * 5) % 160)) * 100) / 100;
-        out.push(makeReceipt({ vendor, amount, date, status: "complete", source: "upload", accountLast4: acc.last4, payment }));
+
+  if (range === "1m") {
+    const buckets = [0, 0, 0, 0];
+    flat.forEach((r) => {
+      const d = new Date(r.date);
+      if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+        const week = Math.min(3, Math.floor((d.getDate() - 1) / 7));
+        buckets[week] += r.amount;
       }
-    }
-  });
-  return out.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-}
+    });
+    return buckets.map((v, i) => ({ label: `Wk ${i + 1}`, value: v }));
+  }
 
-function receiptToTransaction(r: Receipt): Transaction {
-  return {
-    id: uid("txn"),
-    receiptId: r.id,
-    vendor: r.vendor,
-    amount: r.amount,
-    date: r.date,
-    time: nowTime(),
-    category: r.category,
-    status: r.status,
-    paymentMethod: r.paymentMethod,
-    paymentType: r.paymentType,
-    emailSource: r.source === "email" ? "receipts@vendor.com" : undefined,
-    accountLast4: r.accountLast4,
-  };
-}
-
-function receiptToHistoryEntry(r: Receipt): HistoryEntry {
-  return { id: uid("hist"), accountLast4: r.accountLast4, vendor: r.vendor, amount: r.amount, date: r.date };
+  const monthsBack = range === "3m" ? 3 : range === "6m" ? 6 : 12;
+  const labels: { label: string; year: number; month: number }[] = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    labels.push({ label: d.toLocaleString(undefined, { month: "short" }), year: d.getFullYear(), month: d.getMonth() });
+  }
+  return labels.map((l) => ({
+    label: l.label,
+    value: flat
+      .filter((r) => {
+        const d = new Date(r.date);
+        return d.getFullYear() === l.year && d.getMonth() === l.month;
+      })
+      .reduce((a, r) => a + r.amount, 0),
+  }));
 }
 
 function smoothPath(points: { x: number; y: number }[]) {
@@ -339,460 +312,93 @@ function smoothPath(points: { x: number; y: number }[]) {
   return d;
 }
 
-/** Builds the graph series from the permanent history ledger — untouched by deletes — for the active account + range. */
-function buildSeries(history: HistoryEntry[], last4: string, range: DateRange) {
-  const now = new Date();
-  const filtered = history.filter((t) => t.accountLast4 === last4);
-
-  if (range === "1m") {
-    const buckets = [0, 0, 0, 0];
-    filtered.forEach((t) => {
-      const d = new Date(t.date);
-      if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-        const week = Math.min(3, Math.floor((d.getDate() - 1) / 7));
-        buckets[week] += t.amount;
-      }
-    });
-    return buckets.map((v, i) => ({ label: `Wk ${i + 1}`, value: v }));
-  }
-
-  const monthsBack = range === "3m" ? 3 : range === "6m" ? 6 : 12;
-  const labels: { label: string; year: number; month: number }[] = [];
-  for (let i = monthsBack - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    labels.push({ label: d.toLocaleString(undefined, { month: "short" }), year: d.getFullYear(), month: d.getMonth() });
-  }
-  return labels.map((l) => ({
-    label: l.label,
-    value: filtered
-      .filter((t) => {
-        const d = new Date(t.date);
-        return d.getFullYear() === l.year && d.getMonth() === l.month;
-      })
-      .reduce((a, t) => a + t.amount, 0),
-  }));
-}
-
-/* ============================================================================
-   UPLOAD SCREEN  — shown when there are zero receipts
-   ========================================================================= */
-
-function UploadScreen({
-  accent,
-  onUpload,
-}: {
-  accent: string;
-  onUpload: (source: "upload" | "camera", fileName?: string, imagePreview?: string) => void;
-}) {
-  const [dragOver, setDragOver] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const ACCEPTED = ".jpg,.jpeg,.png,.heic,.pdf,.xlsx,.xls";
-
-  const handleFiles = useCallback(
-    async (files: FileList | null, source: "upload" | "camera" = "upload") => {
-      if (!files || !files.length) return;
-      setProcessing(true);
-      const file = files[0];
-      const preview = await readImagePreview(file);
-      window.setTimeout(() => {
-        onUpload(source, file.name, preview);
-        setProcessing(false);
-      }, 900);
-    },
-    [onUpload]
-  );
-
-  return (
-    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden text-white" style={{ background: PALETTE.deepest }}>
-      <div className="pointer-events-none absolute inset-0">
-        <motion.div
-          className="absolute -top-24 left-1/4 w-[480px] h-[480px] rounded-full blur-[130px]"
-          style={{ background: `${accent}22` }}
-          animate={{ y: [0, 24, 0] }}
-          transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="absolute bottom-0 right-1/4 w-[420px] h-[420px] rounded-full blur-[120px]"
-          style={{ background: `${PALETTE.sage}33` }}
-          animate={{ y: [0, -20, 0] }}
-          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-        />
-      </div>
-
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }} className="relative z-10 w-full max-w-xl mx-6">
-        <div className="text-center mb-8">
-          <p className="text-xs tracking-[0.3em] uppercase mb-3" style={{ color: accent }}>
-            Receipt AI
-          </p>
-          <h1 className="text-3xl font-semibold">Add your first receipt</h1>
-          <p className="text-sm text-white/50 mt-2">Drop a file, snap a photo, or upload — we&apos;ll scan and extract everything for you.</p>
-        </div>
-
-        <motion.div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragOver(false);
-            handleFiles(e.dataTransfer.files);
-          }}
-          animate={{ scale: dragOver ? 1.02 : 1, borderColor: dragOver ? accent : "rgba(255,255,255,0.14)" }}
-          transition={{ type: "spring", stiffness: 200, damping: 20 }}
-          className="relative rounded-[28px] border-2 border-dashed backdrop-blur-xl bg-white/[0.04] px-8 py-14 flex flex-col items-center text-center shadow-[0_30px_80px_rgba(0,0,0,0.35)]"
-        >
-          <motion.div
-            animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 border border-white/10"
-            style={{ background: `${accent}1f` }}
-          >
-            {processing ? (
-              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                <UploadCloud size={26} color={accent} />
-              </motion.div>
-            ) : (
-              <UploadCloud size={26} color={accent} />
-            )}
-          </motion.div>
-
-          <p className="font-medium text-white/90">{processing ? "Scanning your receipt…" : "Drag & drop a receipt here"}</p>
-          <p className="text-xs text-white/40 mt-1 mb-6">JPG · PNG · HEIC · PDF · EXCEL</p>
-
-          <div className="flex items-center gap-3 flex-wrap justify-center">
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => inputRef.current?.click()}
-              className="flex items-center gap-2 rounded-full px-5 py-3 text-sm font-medium shadow-lg"
-              style={{ background: accent, color: PALETTE.deepest }}
-            >
-              <FileText size={15} /> Upload Receipt
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => cameraInputRef.current?.click()}
-              className="flex items-center gap-2 rounded-full px-5 py-3 text-sm font-medium text-white border border-white/15 bg-white/[0.06] hover:bg-white/[0.1] transition-colors"
-            >
-              <Camera size={15} /> Camera
-            </motion.button>
-          </div>
-
-          <div className="flex items-center gap-2 mt-6 text-white/30 text-[11px]">
-            <FileImage size={12} /> Files stay on your encrypted workspace
-          </div>
-
-          <input ref={inputRef} type="file" accept={ACCEPTED} className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFiles(e.target.files, "camera")} />
-        </motion.div>
-      </motion.div>
-    </div>
-  );
-}
-
-/* ============================================================================
-   RECEIPT INBOX
-   ========================================================================= */
-
-function StatusBadge({ status }: { status: ReceiptStatus }) {
-  const styles: Record<ReceiptStatus, { label: string; tone: string }> = {
-    processing: { label: "Processing", tone: PALETTE.amber },
-    ongoing: { label: "Ongoing", tone: PALETTE.gold },
-    pending: { label: "Pending", tone: PALETTE.mist },
-    complete: { label: "Complete", tone: PALETTE.forest },
-    failed: { label: "Failed", tone: FAILED_TONE },
-  };
-  const s = styles[status];
-  return (
-    <span className="text-[10px] font-medium rounded-full px-2 py-0.5" style={{ color: s.tone, background: `${s.tone}1a`, border: `1px solid ${s.tone}40` }}>
-      {s.label}
-    </span>
-  );
-}
-
-/** "Export PDF" per the spec — the actual output is an Excel-compatible CSV of the receipt. */
-function exportReceiptExcel(r: Receipt) {
+/** Exports every merchant receipt + line item inside one WhatsApp submission as a CSV. */
+function exportMessageCsv(m: ReceiptMessage) {
   const header = ["Field", "Value"];
-  const rows = [
-    ["Brand / Establishment", r.vendor],
-    ["Date", dateAndYear(r.date)],
-    ["Amount", peso(r.amount)],
-    ["Payment Method", `${r.paymentMethod} (${r.paymentType === "cash" ? "Cash" : "Online"})`],
-    ["Category", r.category],
-    ["Source", r.source],
-    ["Status", r.status],
+  const rows: string[][] = [
+    ["Sender", m.sender_name],
+    ["Status", m.status],
+    ["Submitted", dateTime(m.createdAt)],
+    ["Grand Total", formatAmount(m.grand_total, m.receipts[0]?.currency)],
     ["", ""],
-    ["Line Item", "Price"],
-    ...r.lineItems.map((li) => [`${li.qty}x ${li.name}`, peso(li.price)]),
   ];
+  m.receipts.forEach((r, i) => {
+    rows.push([`Receipt ${i + 1} — Merchant`, r.merchant_name]);
+    rows.push([`Receipt ${i + 1} — Date`, `${r.date} ${r.time ?? ""}`.trim()]);
+    rows.push([`Receipt ${i + 1} — Total`, formatAmount(r.total_amount, r.currency)]);
+    r.items.forEach((it) => rows.push([`  ${it.description}`, formatAmount(it.price, r.currency)]));
+    rows.push(["", ""]);
+  });
+
   const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${r.vendor.replace(/\s+/g, "_")}_receipt.csv`;
+  a.download = `${m.sender_name.replace(/\s+/g, "_")}_receipts.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
 }
 
-function ReceiptThumb({ receipt, size = 40 }: { receipt: Receipt; size?: number }) {
-  if (receipt.imagePreview) {
-    return <img src={receipt.imagePreview} alt={receipt.vendor} style={{ width: size, height: size }} className="rounded-xl object-cover shrink-0 border border-white/10" />;
-  }
+/* ============================================================================
+   SHARED BITS
+   ========================================================================= */
+
+function StatusBadge({ status, t }: { status: string; t: ThemeTokens }) {
+  const meta = statusMeta(t, status);
   return (
-    <div
-      className="rounded-xl flex items-center justify-center shrink-0"
-      style={{ width: size, height: size, background: `linear-gradient(135deg,${PALETTE.amber},${PALETTE.rust})`, color: PALETTE.deepest }}
+    <span
+      className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${meta.pulse ? "animate-pulse" : ""}`}
+      style={{ color: meta.tone, background: `${meta.tone}1a`, border: `1px solid ${meta.tone}40` }}
     >
-      <ReceiptIcon size={size * 0.45} />
-    </div>
-  );
-}
-
-function ReceiptInbox({
-  receipts,
-  selectedReceiptId,
-  onSelect,
-  onDelete,
-  onReassignStatus,
-  canManage,
-}: {
-  receipts: Receipt[];
-  selectedReceiptId: string | null;
-  onSelect: (id: string) => void;
-  onDelete: (id: string) => void;
-  onReassignStatus: (id: string, status: ReceiptStatus) => void;
-  canManage: boolean;
-}) {
-  const [localQuery, setLocalQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | ReceiptStatus>("all");
-  const [reassigning, setReassigning] = useState(false);
-
-  const filtered = useMemo(() => {
-    const q = localQuery.trim().toLowerCase();
-    return receipts
-      .filter((r) => (filter === "all" ? true : r.status === filter))
-      .filter((r) => (q ? r.vendor.toLowerCase().includes(q) || r.category.toLowerCase().includes(q) || dateAndYear(r.date).toLowerCase().includes(q) : true));
-  }, [receipts, filter, localQuery]);
-
-  const selected = receipts.find((r) => r.id === selectedReceiptId) ?? filtered[0] ?? null;
-
-  const FILTERS: { key: "all" | ReceiptStatus; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "processing", label: "Processing" },
-    { key: "pending", label: "Pending" },
-    { key: "complete", label: "Complete" },
-  ];
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5 h-full">
-      <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-md p-4 flex flex-col min-h-0">
-        <h3 className="text-sm font-semibold text-white px-1 mb-3">Receipt Inbox</h3>
-
-        <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-xl px-3 py-2 mb-3">
-          <Search size={14} className="text-white/40" />
-          <input
-            value={localQuery}
-            onChange={(e) => setLocalQuery(e.target.value)}
-            placeholder="Search brand, category, or date"
-            className="bg-transparent outline-none text-sm placeholder:text-white/30 w-full text-white"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`text-[11px] px-3 py-1.5 rounded-full transition-colors ${filter === f.key ? "bg-white text-[#133020] font-medium" : "text-white/50 bg-white/5 hover:text-white"}`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-2 overflow-y-auto flex-1 pr-1">
-          <AnimatePresence initial={false}>
-            {filtered.map((r) => (
-              <motion.button
-                key={r.id}
-                layout
-                initial={{ opacity: 0, x: -24 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -24 }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
-                whileHover={{ y: -2, backgroundColor: "rgba(255,255,255,0.05)" }}
-                onClick={() => {
-                  onSelect(r.id);
-                  setReassigning(false);
-                }}
-                className={`w-full text-left rounded-2xl border px-4 py-3 flex items-center gap-3 transition-colors ${
-                  selected?.id === r.id ? "border-[#E89131]/50 bg-white/[0.05]" : "border-white/10 bg-white/[0.02]"
-                }`}
-              >
-                <ReceiptThumb receipt={r} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm text-white truncate">{r.vendor}</p>
-                    {r.source === "email" && <Mail size={11} className="text-white/40 shrink-0" />}
-                  </div>
-                  <p className="text-[11px] text-white/40">
-                    {r.category} · {dateAndYear(r.date)}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="text-sm font-medium text-white">{peso(r.amount)}</span>
-                  <StatusBadge status={r.status} />
-                </div>
-              </motion.button>
-            ))}
-          </AnimatePresence>
-          {filtered.length === 0 && <p className="text-center text-xs text-white/30 py-8">No receipts match.</p>}
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-md p-6 overflow-y-auto">
-        <AnimatePresence mode="wait">
-          {selected ? (
-            <motion.div key={selected.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              {/* Receipt Preview + header: brand + date/year */}
-              <div className="flex items-start justify-between mb-6 gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <ReceiptThumb receipt={selected} size={56} />
-                  <div className="min-w-0">
-                    <h2 className="text-xl font-semibold text-white truncate">{selected.vendor}</h2>
-                    <p className="text-sm text-white/40">{dateAndYear(selected.date)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <StatusBadge status={selected.status} />
-                  {canManage && (
-                    <button onClick={() => onDelete(selected.id)} className="text-white/40 hover:text-white transition-colors" title="Delete receipt">
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* 4 boxes: Amount / Payment Method / Category / Source */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-4">
-                  <p className="text-[11px] text-white/40 mb-1">Amount</p>
-                  <p className="text-lg font-semibold text-white">{peso(selected.amount)}</p>
-                </div>
-                <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-4">
-                  <p className="text-[11px] text-white/40 mb-1">Payment Method</p>
-                  <p className="text-sm text-white flex items-center gap-1.5">
-                    {selected.paymentType === "cash" ? <Banknote size={13} /> : <CreditCard size={13} />}
-                    {selected.paymentMethod} <span className="text-white/40">({selected.paymentType === "cash" ? "Cash" : "Online"})</span>
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-4">
-                  <p className="text-[11px] text-white/40 mb-1">Category</p>
-                  <p className="text-sm text-white">{selected.category}</p>
-                </div>
-                <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-4">
-                  <p className="text-[11px] text-white/40 mb-1">Source</p>
-                  <p className="text-sm text-white capitalize">{selected.source}</p>
-                </div>
-              </div>
-
-              <p className="text-xs font-semibold text-white/50 mb-3 tracking-wide">TIMELINE</p>
-              <div className="space-y-3 mb-6">
-                {selected.timeline.map((t, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <span className="w-2 h-2 rounded-full" style={{ background: t.done ? PALETTE.sage : "rgba(255,255,255,0.15)" }} />
-                    <span className={`text-sm ${t.done ? "text-white" : "text-white/30"}`}>{t.label}</span>
-                    {t.time && <span className="text-[11px] text-white/30 ml-auto">{t.time}</span>}
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-xs font-semibold text-white/50 mb-3 tracking-wide">LINE ITEMS</p>
-              <div className="space-y-2 mb-6">
-                {selected.lineItems.map((li) => (
-                  <div key={li.id} className="flex items-center justify-between text-sm">
-                    <span className="text-white/70">
-                      {li.qty}× {li.name}
-                    </span>
-                    <span className="text-white">{peso(li.price)}</span>
-                  </div>
-                ))}
-              </div>
-
-              {!canManage && (
-                <p className="text-[11px] text-white/30 flex items-center gap-1.5 mb-3">
-                  <Lock size={11} /> View-only account — ask an Admin or User to make changes.
-                </p>
-              )}
-
-              <div className="flex items-center gap-3 flex-wrap relative">
-                <button
-                  onClick={() => exportReceiptExcel(selected)}
-                  className="text-xs font-medium text-white bg-white/10 hover:bg-white/15 rounded-full px-4 py-2 transition-colors"
-                  title="Downloads an Excel-compatible .csv of this receipt"
-                >
-                  Export PDF
-                </button>
-
-                {canManage && (
-                  <>
-                    <button onClick={() => setReassigning((v) => !v)} className="text-xs font-medium text-white bg-white/10 hover:bg-white/15 rounded-full px-4 py-2 transition-colors">
-                      Reassign category
-                    </button>
-                    {reassigning && (
-                      <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="absolute top-10 left-[7.5rem] z-10 rounded-xl border border-white/10 bg-[#1f1f1f] shadow-2xl p-2 flex flex-col gap-1 w-40">
-                        {STATUS_OPTIONS.map((s) => (
-                          <button
-                            key={s.key}
-                            onClick={() => {
-                              onReassignStatus(selected.id, s.key);
-                              setReassigning(false);
-                            }}
-                            className="text-left text-xs text-white/80 hover:text-white hover:bg-white/5 rounded-lg px-2 py-1.5 flex items-center justify-between"
-                          >
-                            {s.label}
-                            {selected.status === s.key && <Check size={12} style={{ color: PALETTE.amber }} />}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                    <button onClick={() => onDelete(selected.id)} className="text-xs font-medium rounded-full px-4 py-2 transition-colors ml-auto" style={{ color: FAILED_TONE, background: `${FAILED_TONE}1a` }}>
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          ) : (
-            <p className="text-sm text-white/30 text-center py-20">Select a receipt to view details.</p>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
+      {meta.label}
+    </span>
   );
 }
 
 /* ============================================================================
-   NOTIFICATIONS  (bell dropdown + toast pop-ups)
+   TOP BAR
    ========================================================================= */
 
-function NotificationCenter({
+function NavPill({ view, setView, t }: { view: View; setView: (v: View) => void; t: ThemeTokens }) {
+  const TABS: { key: View; label: string; icon: any }[] = [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "inbox", label: "Receipt Inbox", icon: InboxIcon },
+  ];
+  return (
+    <div className="flex items-center gap-1 rounded-full p-1 backdrop-blur-md border" style={{ background: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.18)" }}>
+      {TABS.map(({ key, label, icon: Icon }) => {
+        const active = view === key;
+        return (
+          <button
+            key={key}
+            onClick={() => setView(key)}
+            className="relative flex items-center gap-1.5 text-xs px-3.5 py-1.5 rounded-full transition-colors"
+            style={{ color: active ? t.accentInk : t.onBarMuted }}
+          >
+            {active && <motion.div layoutId="nav-pill" className="absolute inset-0 rounded-full" style={{ background: t.accent }} transition={{ type: "spring", stiffness: 350, damping: 30 }} />}
+            <span className="relative flex items-center gap-1.5">
+              <Icon size={13} />
+              {label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function NotificationBell({
+  t,
   notifications,
-  accent,
   onMarkRead,
   onMarkAllRead,
   onOpenReceipt,
 }: {
+  t: ThemeTokens;
   notifications: AppNotification[];
-  accent: string;
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
   onOpenReceipt: (id: string) => void;
@@ -802,35 +408,43 @@ function NotificationCenter({
 
   return (
     <div className="relative">
-      <button className="text-white/60 hover:text-white transition-colors relative" onClick={() => setOpen((v) => !v)}>
-        <Bell size={16} />
+      <button onClick={() => setOpen((o) => !o)} className="relative flex items-center justify-center w-9 h-9 rounded-full" style={{ background: "rgba(255,255,255,0.1)" }}>
+        <Bell size={16} color={t.onBar} />
         {unread > 0 && (
-          <motion.span
-            className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
-            style={{ background: accent }}
-            animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
-            transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-          />
+          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center" style={{ background: t.accent, color: t.accentInk }}>
+            {unread}
+          </span>
         )}
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="absolute right-0 top-8 w-80 rounded-2xl border border-white/10 bg-[#1f1f1f] shadow-2xl z-30 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-              <span className="text-xs font-semibold text-white">Notifications</span>
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="absolute left-0 top-11 w-80 rounded-2xl shadow-2xl p-2 z-30 border"
+            style={{ background: t.surface, borderColor: t.border }}
+          >
+            <div className="flex items-center justify-between px-2 py-1.5">
+              <p className="text-xs font-bold" style={{ color: t.text }}>
+                Notifications
+              </p>
               <div className="flex items-center gap-3">
-                <button onClick={onMarkAllRead} className="text-[11px] text-white/40 hover:text-white">
+                <button onClick={onMarkAllRead} className="text-[11px]" style={{ color: t.textMuted }}>
                   Mark all read
                 </button>
-                <button onClick={() => setOpen(false)} className="text-white/40 hover:text-white">
-                  <X size={13} />
+                <button onClick={() => setOpen(false)}>
+                  <X size={13} color={t.textMuted} />
                 </button>
               </div>
             </div>
-            <div className="max-h-80 overflow-y-auto">
-              {notifications.length === 0 && <p className="text-xs text-white/30 text-center py-8">You&apos;re all caught up.</p>}
+            <div className="space-y-1 max-h-72 overflow-y-auto">
+              {notifications.length === 0 && (
+                <p className="text-xs px-2 py-6 text-center" style={{ color: t.textMuted }}>
+                  You&apos;re all caught up.
+                </p>
+              )}
               {notifications.map((n) => {
                 const Icon = NOTIF_ICONS[n.type];
                 return (
@@ -841,17 +455,21 @@ function NotificationCenter({
                       if (n.receiptId) onOpenReceipt(n.receiptId);
                       setOpen(false);
                     }}
-                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors border-b border-white/5 last:border-0 text-left"
+                    className="w-full flex items-start gap-2 px-2 py-2 rounded-xl text-left"
+                    style={{ background: t.surfaceAlt }}
                   >
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${accent}22`, border: `1px solid ${accent}40` }}>
-                      <Icon size={13} color={accent} strokeWidth={1.8} />
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: t.accent, color: t.accentInk }}>
+                      <Icon size={13} />
                     </div>
                     <div className="min-w-0">
-                      <p className={`text-xs truncate ${n.read ? "text-white/50" : "text-white font-medium"}`}>{n.title}</p>
-                      <p className="text-[11px] text-white/40 truncate">{n.detail}</p>
+                      <p className="text-xs font-medium truncate" style={{ color: n.read ? t.textMuted : t.text }}>
+                        {n.title}
+                      </p>
+                      <p className="text-[10px] truncate" style={{ color: t.textMuted }}>
+                        {n.detail}
+                      </p>
                     </div>
-                    <span className="text-[10px] text-white/25 ml-auto shrink-0">{n.time}</span>
-                    {!n.read && <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1" style={{ background: PALETTE.amber }} />}
+                    {!n.read && <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1 ml-auto" style={{ background: t.accent }} />}
                   </button>
                 );
               })}
@@ -863,29 +481,34 @@ function NotificationCenter({
   );
 }
 
-function ToastStack({ toasts, onOpenReceipt }: { toasts: AppNotification[]; onOpenReceipt: (id: string) => void }) {
+function ToastStack({ t, toasts, onOpenReceipt }: { t: ThemeTokens; toasts: AppNotification[]; onOpenReceipt: (id: string) => void }) {
   return (
     <div className="fixed top-5 right-5 z-50 flex flex-col gap-2 w-72">
       <AnimatePresence>
-        {toasts.map((t) => {
-          const Icon = NOTIF_ICONS[t.type];
+        {toasts.map((toast) => {
+          const Icon = NOTIF_ICONS[toast.type];
           return (
             <motion.button
-              key={t.id}
+              key={toast.id}
               layout
               initial={{ opacity: 0, x: 40, scale: 0.95 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 40, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 300, damping: 28 }}
-              onClick={() => t.receiptId && onOpenReceipt(t.receiptId)}
-              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#1f1f1f]/95 backdrop-blur-md shadow-2xl px-4 py-3 text-left"
+              onClick={() => toast.receiptId && onOpenReceipt(toast.receiptId)}
+              className="flex items-center gap-3 rounded-2xl shadow-2xl px-4 py-3 text-left border"
+              style={{ background: t.surface, borderColor: t.border }}
             >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${PALETTE.amber}22`, border: `1px solid ${PALETTE.amber}40` }}>
-                <Icon size={13} color={PALETTE.amber} />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${t.accent}22`, border: `1px solid ${t.accent}55` }}>
+                <Icon size={13} color={t.accentInk} />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-white truncate">{t.title}</p>
-                <p className="text-[11px] text-white/50 truncate">{t.detail}</p>
+                <p className="text-xs font-medium truncate" style={{ color: t.text }}>
+                  {toast.title}
+                </p>
+                <p className="text-[11px] truncate" style={{ color: t.textMuted }}>
+                  {toast.detail}
+                </p>
               </div>
             </motion.button>
           );
@@ -896,156 +519,619 @@ function ToastStack({ toasts, onOpenReceipt }: { toasts: AppNotification[]; onOp
 }
 
 /* ============================================================================
-   ACCOUNT SWITCHER  (3 roles: Admin / User / Viewer, with login+password editing)
+   TRANSACTION HISTORY CHART — smooth SVG line chart, theme aware
    ========================================================================= */
 
-const ROLE_TONE: Record<Role, string> = { Admin: PALETTE.amber, User: PALETTE.sage, Viewer: PALETTE.mist };
+function TransactionHistoryChart({ data, t }: { data: { label: string; value: number }[]; t: ThemeTokens }) {
+  const W = 640;
+  const H = 200;
+  const PAD = 24;
+  const max = Math.max(1, ...data.map((d) => d.value));
 
-function AccountSwitcher({
-  accounts,
-  activeIndex,
-  onSwitch,
-  onUpdateCredentials,
-}: {
-  accounts: Account[];
-  activeIndex: number;
-  onSwitch: (i: number) => void;
-  onUpdateCredentials: (id: string, email: string, password: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draftEmail, setDraftEmail] = useState("");
-  const [draftPassword, setDraftPassword] = useState("");
-  const active = accounts[activeIndex];
+  const points = data.map((d, i) => ({
+    x: data.length > 1 ? PAD + (i * (W - PAD * 2)) / (data.length - 1) : W / 2,
+    y: H - PAD - (d.value / max) * (H - PAD * 2),
+  }));
+
+  const linePath = smoothPath(points);
+  const areaPath = points.length > 0 ? `${linePath} L ${points[points.length - 1].x} ${H - PAD} L ${points[0].x} ${H - PAD} Z` : "";
 
   return (
-    <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 pl-3 border-l border-white/10 cursor-pointer">
-        <div className="w-8 h-8 rounded-full" style={{ background: `linear-gradient(135deg, ${active.avatarColor}, ${PALETTE.rust})` }} />
-        <div className="leading-tight text-left">
-          <p className="text-xs font-medium text-white">{active.name}</p>
-          <p className="text-[10px]" style={{ color: ROLE_TONE[active.role] }}>
-            {active.role} · •• {active.last4}
-          </p>
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 480 }}>
+        <defs>
+          <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={t.accent} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={t.accent} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        {areaPath && <path d={areaPath} fill="url(#chartFill)" />}
+        {linePath && <path d={linePath} fill="none" stroke={t.green} strokeWidth={3} strokeLinecap="round" />}
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={4} fill={t.accent} stroke={t.surface} strokeWidth={1.5} />
+        ))}
+        {data.map((d, i) => (
+          <text key={i} x={points[i]?.x ?? 0} y={H - 4} textAnchor="middle" fontSize={11} fill={t.textMuted}>
+            {d.label}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/* ============================================================================
+   PIPELINE STATUS + RECENT STATUS STRIP
+   ========================================================================= */
+
+function PipelineStatus({ counts, t }: { counts: Record<string, number>; t: ThemeTokens }) {
+  const ORDER = ["processing", "pending", "confirmed"];
+  return (
+    <section className="rounded-2xl p-6 border" style={{ background: t.surface, borderColor: t.border }}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs font-bold tracking-wider uppercase" style={{ color: t.textMuted }}>
+          Pipeline Status
+        </p>
+        <RefreshCw size={14} color={t.textMuted} />
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {ORDER.map((key) => {
+          const m = statusMeta(t, key);
+          const Icon = m.icon;
+          return (
+            <div key={key} className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl" style={{ background: t.surfaceAlt }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${m.tone}22` }}>
+                <Icon size={14} color={m.tone} className={m.spin ? "animate-spin" : m.pulse ? "animate-pulse" : ""} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: t.text }}>
+                  {counts[key] ?? 0}
+                </p>
+                <p className="text-[10px]" style={{ color: t.textMuted }}>
+                  {m.label}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function StatusUpdateStrip({ receipts, t, onOpen }: { receipts: ReceiptMessage[]; t: ThemeTokens; onOpen: (id: string) => void }) {
+  const recent = receipts.slice(0, 8);
+  if (recent.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl p-6 border" style={{ background: t.surface, borderColor: t.border }}>
+      <p className="text-xs font-bold tracking-wider uppercase mb-4" style={{ color: t.textMuted }}>
+        Recent Status Updates
+      </p>
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {recent.map((m) => {
+          const meta = statusMeta(t, m.status);
+          const Icon = meta.icon;
+          return (
+            <button key={m.id} onClick={() => onOpen(m.id)} className="flex items-center gap-2 shrink-0 rounded-full px-3 py-1.5" style={{ background: t.surfaceAlt }}>
+              <Icon size={11} color={meta.tone} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
+              <span className="text-[11px]" style={{ color: t.text }}>
+                {m.sender_name}
+              </span>
+              <span className="text-[10px]" style={{ color: t.textMuted }}>
+                {formatAmount(m.grand_total, m.receipts[0]?.currency)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================================
+   QUICK STATUS DROPDOWN
+   ========================================================================= */
+
+function StatusDropdown({ t, value, onChange }: { t: ThemeTokens; value: string; onChange: (s: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const options = STATUS_OPTIONS.includes(value) ? STATUS_OPTIONS : [...STATUS_OPTIONS, value];
+  return (
+    <div className="relative inline-block flex-shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap"
+        style={{ background: t.surfaceAlt, color: t.text }}
+      >
+        Update status
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="absolute bottom-12 left-0 w-44 rounded-xl shadow-xl p-1 z-20 border" style={{ background: t.surface, borderColor: t.border }}>
+          {options.map((o) => (
+            <button
+              key={o}
+              onClick={() => {
+                onChange(o);
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between"
+              style={{ color: t.text }}
+            >
+              {o}
+              {value === o && <Check size={13} color={t.green} />}
+            </button>
+          ))}
         </div>
-        <motion.div animate={{ rotate: open ? 180 : 0 }}>
-          <ChevronDown size={13} className="text-white/40" />
-        </motion.div>
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: -6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ duration: 0.18 }}
-              className="absolute right-0 top-11 w-72 rounded-2xl border border-white/10 bg-[#1f1f1f] shadow-2xl z-30 overflow-hidden"
-            >
-              <div className="px-4 py-2.5 border-b border-white/5">
-                <span className="text-[11px] font-semibold text-white/40 tracking-wide">SWITCH ACCOUNT</span>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Dashboard Content */}
-        <div className="p-8 max-w-7xl w-full mx-auto space-y-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-white">Welcome Back!</h2>
-              <p className="text-xs text-zinc-400 mt-1">Here is your receipt processing overview.</p>
-            </div>
-            
-            {/* Action Buttons Group */}
-            <div className="flex items-center gap-3">
-              {/* New Gallery Button */}
-              <button className="flex items-center gap-2 bg-zinc-900/60 hover:bg-zinc-800/80 text-zinc-200 hover:text-white border border-zinc-800/80 hover:border-zinc-700 px-4 py-2.5 rounded-xl text-xs font-semibold backdrop-blur-md shadow-lg transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
-                <ImageIcon className="w-4 h-4 text-emerald-400" />
-                View Gallery
-              </button>
-
-              <button className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 font-semibold px-4 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-500/10 hover:shadow-emerald-400/20 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
-                <Plus className="w-4 h-4 stroke-[3]" />
-                Upload Receipt
-              </button>
-            </div>
-          </div>
+      )}
+    </div>
+  );
+}
 
 /* ============================================================================
-   VIEW SWITCHER — Dashboard / Receipt Inbox / Upload New Receipt (item 18)
+   EDIT MODAL — fix values the OCR misread: sender, status, per-merchant
+   fields, and individual line items. Grand total is always recomputed from
+   the receipts below rather than typed directly, so it can't drift.
    ========================================================================= */
 
-type View = "dashboard" | "inbox";
+function EditReceiptModal({ message, t, onClose, onSave }: { message: ReceiptMessage; t: ThemeTokens; onClose: () => void; onSave: (updates: Partial<ReceiptMessage>) => void }) {
+  const [draft, setDraft] = useState<ReceiptMessage>(() => JSON.parse(JSON.stringify(message)));
 
-            {/* Card 3 */}
-            <div className="relative group overflow-hidden bg-gradient-to-b from-zinc-900/60 to-zinc-900/20 backdrop-blur-md border border-zinc-800/60 p-6 rounded-2xl shadow-xl transition-all duration-300 hover:border-zinc-700/60">
-              <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/0 to-emerald-500/[0.02] pointer-events-none" />
-              <p className="text-xs font-medium text-zinc-400 tracking-wider uppercase">Processed Value</p>
-              <p className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300 mt-3 tracking-tight font-mono">₱14,235.50</p>
-            </div>
+  const computedGrandTotal = draft.receipts.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0);
 
-/* ============================================================================
-   ADD-NEW-CARD COLOR PICKER (swatches + exact hex color input)
-   ========================================================================= */
+  const updateReceiptField = (index: number, field: keyof ReceiptEntry, value: any) => {
+    setDraft((d) => {
+      const receipts = d.receipts.slice();
+      receipts[index] = { ...receipts[index], [field]: value };
+      return { ...d, receipts };
+    });
+  };
 
-function AddCardButton({ accent, onCreate, disabled }: { accent: string; onCreate: (color: string) => void; disabled?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const [customColor, setCustomColor] = useState(PALETTE.amber);
+  const updateItemField = (rIndex: number, iIndex: number, field: keyof ReceiptItem, value: any) => {
+    setDraft((d) => {
+      const receipts = d.receipts.slice();
+      const items = receipts[rIndex].items.slice();
+      items[iIndex] = { ...items[iIndex], [field]: value };
+      receipts[rIndex] = { ...receipts[rIndex], items };
+      return { ...d, receipts };
+    });
+  };
 
-  if (disabled) return null;
+  const addItem = (rIndex: number) => {
+    setDraft((d) => {
+      const receipts = d.receipts.slice();
+      receipts[rIndex] = { ...receipts[rIndex], items: [...receipts[rIndex].items, { description: "", price: 0 }] };
+      return { ...d, receipts };
+    });
+  };
+
+  const removeItem = (rIndex: number, iIndex: number) => {
+    setDraft((d) => {
+      const receipts = d.receipts.slice();
+      receipts[rIndex] = { ...receipts[rIndex], items: receipts[rIndex].items.filter((_, i) => i !== iIndex) };
+      return { ...d, receipts };
+    });
+  };
+
+  const addReceipt = () => {
+    setDraft((d) => ({
+      ...d,
+      receipts: [...d.receipts, { merchant_name: "", date: new Date().toISOString().slice(0, 10), time: "", total_amount: 0, currency: "PHP", items: [] }],
+    }));
+  };
+
+  const removeReceipt = (rIndex: number) => {
+    setDraft((d) => ({ ...d, receipts: d.receipts.filter((_, i) => i !== rIndex) }));
+  };
+
+  const handleSave = () => {
+    onSave({ sender_name: draft.sender_name, status: draft.status, receipts: draft.receipts, excel_link: draft.excel_link });
+    onClose();
+  };
+
+  const inputStyle = { background: t.surfaceAlt, color: t.text, borderColor: t.border } as const;
 
   return (
-    <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 text-xs font-medium rounded-full px-3 py-1.5 transition-colors" style={{ background: accent, color: PALETTE.deepest }}>
-        <Plus size={13} /> Add new
-      </button>
-      <AnimatePresence>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: -6, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.95 }}
-              className="absolute right-0 top-9 z-30 rounded-2xl border border-white/10 bg-[#1f1f1f] shadow-2xl p-3 w-56"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl shadow-2xl p-6 space-y-5"
+        style={{ background: t.surface }}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold" style={{ color: t.text }}>
+            Edit receipt
+          </h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: t.surfaceAlt }}>
+            <X size={15} color={t.textMuted} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider" style={{ color: t.textMuted }}>
+              Sender
+            </label>
+            <input
+              value={draft.sender_name}
+              onChange={(e) => setDraft((d) => ({ ...d, sender_name: e.target.value }))}
+              className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none border"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider" style={{ color: t.textMuted }}>
+              Status
+            </label>
+            <select
+              value={draft.status}
+              onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}
+              className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none border"
+              style={inputStyle}
             >
-              <p className="text-[11px] text-white/40 mb-2 flex items-center gap-1.5">
-                <Palette size={11} /> Choose a card color
-              </p>
-              <div className="grid grid-cols-6 gap-2 mb-3">
-                {CARD_SWATCHES.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => {
-                      onCreate(c);
-                      setOpen(false);
-                    }}
-                    className="w-6 h-6 rounded-full border border-white/20 hover:scale-110 transition-transform"
-                    style={{ background: c }}
-                  />
-                ))}
-              </div>
-              <p className="text-[11px] text-white/40 mb-1.5">Or pick an exact color</p>
-              <div className="flex items-center gap-2">
-                <input type="color" value={customColor} onChange={(e) => setCustomColor(e.target.value)} className="w-8 h-8 rounded-lg border border-white/15 bg-transparent cursor-pointer" />
-                <button
-                  onClick={() => {
-                    onCreate(customColor);
-                    setOpen(false);
-                  }}
-                  className="flex-1 text-[11px] font-medium rounded-lg px-3 py-2"
-                  style={{ background: customColor, color: PALETTE.deepest }}
-                >
-                  Use {customColor}
+              {(STATUS_OPTIONS.includes(draft.status) ? STATUS_OPTIONS : [...STATUS_OPTIONS, draft.status]).map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {draft.receipts.map((r, rIndex) => (
+            <div key={rIndex} className="rounded-xl p-4 space-y-3 border" style={{ background: t.surfaceAlt, borderColor: t.border }}>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold" style={{ color: t.textMuted }}>
+                  Receipt {rIndex + 1}
+                </p>
+                <button onClick={() => removeReceipt(rIndex)} title="Remove this receipt">
+                  <Trash2 size={14} color={t.danger} />
                 </button>
               </div>
-            </motion.div>
-          </>
+
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={r.merchant_name}
+                  onChange={(e) => updateReceiptField(rIndex, "merchant_name", e.target.value)}
+                  placeholder="Merchant name"
+                  className="rounded-lg px-3 py-2 text-sm outline-none border"
+                  style={{ background: t.surface, color: t.text, borderColor: t.border }}
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    value={r.currency}
+                    onChange={(e) => updateReceiptField(rIndex, "currency", e.target.value)}
+                    placeholder="Currency"
+                    className="w-20 rounded-lg px-3 py-2 text-sm outline-none border"
+                    style={{ background: t.surface, color: t.text, borderColor: t.border }}
+                  />
+                  <input
+                    type="number"
+                    value={r.total_amount}
+                    onChange={(e) => updateReceiptField(rIndex, "total_amount", Number(e.target.value))}
+                    placeholder="Total"
+                    className="flex-1 rounded-lg px-3 py-2 text-sm outline-none border"
+                    style={{ background: t.surface, color: t.text, borderColor: t.border }}
+                  />
+                </div>
+                <input
+                  type="date"
+                  value={r.date}
+                  onChange={(e) => updateReceiptField(rIndex, "date", e.target.value)}
+                  className="rounded-lg px-3 py-2 text-sm outline-none border"
+                  style={{ background: t.surface, color: t.text, borderColor: t.border }}
+                />
+                <input
+                  type="time"
+                  value={r.time ?? ""}
+                  onChange={(e) => updateReceiptField(rIndex, "time", e.target.value)}
+                  className="rounded-lg px-3 py-2 text-sm outline-none border"
+                  style={{ background: t.surface, color: t.text, borderColor: t.border }}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                {r.items.map((it, iIndex) => (
+                  <div key={iIndex} className="flex items-center gap-2">
+                    <input
+                      value={it.description}
+                      onChange={(e) => updateItemField(rIndex, iIndex, "description", e.target.value)}
+                      placeholder="Item description"
+                      className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none border"
+                      style={{ background: t.surface, color: t.text, borderColor: t.border }}
+                    />
+                    <input
+                      type="number"
+                      value={it.price}
+                      onChange={(e) => updateItemField(rIndex, iIndex, "price", Number(e.target.value))}
+                      className="w-24 rounded-lg px-2.5 py-1.5 text-xs outline-none border"
+                      style={{ background: t.surface, color: t.text, borderColor: t.border }}
+                    />
+                    <button onClick={() => removeItem(rIndex, iIndex)} title="Remove item">
+                      <Trash2 size={13} color={t.danger} />
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => addItem(rIndex)} className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: t.green }}>
+                  <Plus size={12} /> Add item
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <button onClick={addReceipt} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl" style={{ background: t.surfaceAlt, color: t.text }}>
+            <Plus size={13} /> Add another receipt to this message
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t text-sm font-bold" style={{ borderColor: t.border, color: t.text }}>
+          <span>Grand total (auto-calculated)</span>
+          <span className="font-mono">{formatAmount(computedGrandTotal, draft.receipts[0]?.currency)}</span>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: t.textMuted }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} className="px-5 py-2.5 rounded-xl text-sm font-semibold" style={{ background: t.green, color: "#fff" }}>
+            Save changes
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   RECEIPT INBOX — email-style layout: collapsible white list + detail panel.
+   ========================================================================= */
+
+function ReceiptInboxView({
+  t,
+  receipts,
+  focusId,
+  onDelete,
+  onStatusChange,
+  onSaveEdit,
+}: {
+  t: ThemeTokens;
+  receipts: ReceiptMessage[];
+  focusId: string | null;
+  onDelete: (id: string) => void;
+  onStatusChange: (id: string, status: string) => void;
+  onSaveEdit: (id: string, updates: Partial<ReceiptMessage>) => void;
+}) {
+  const [listOpen, setListOpen] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<string>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(receipts[0]?.id ?? null);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (focusId) setSelectedId(focusId);
+  }, [focusId]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return receipts
+      .filter((m) => (filter === "all" ? true : m.status.trim().toLowerCase() === filter))
+      .filter((m) => (q ? [m.sender_name, m.status, ...m.receipts.map((r) => r.merchant_name)].join(" ").toLowerCase().includes(q) : true));
+  }, [receipts, filter, search]);
+
+  const selected = receipts.find((m) => m.id === selectedId) ?? filtered[0] ?? null;
+
+  const counts: Record<string, number> = { all: receipts.length };
+  STATUS_FILTERS.slice(1).forEach((f) => {
+    counts[f.key] = receipts.filter((m) => m.status.trim().toLowerCase() === f.key).length;
+  });
+
+  return (
+    <div className="relative flex flex-1 overflow-hidden gap-5 p-5" style={{ background: `linear-gradient(160deg, ${t.barBg} 0%, ${t.greenDeep} 100%)` }}>
+      {editing && selected && (
+        <EditReceiptModal
+          message={selected}
+          t={t}
+          onClose={() => setEditing(false)}
+          onSave={(updates) => onSaveEdit(selected.id, updates)}
+        />
+      )}
+
+      {/* LIST — white "email" box, collapsible */}
+      <div
+        className="flex-shrink-0 flex flex-col rounded-2xl shadow-xl overflow-hidden transition-all duration-300 ease-in-out"
+        style={{
+          background: t.surface,
+          width: listOpen ? 380 : 0,
+          opacity: listOpen ? 1 : 0,
+          marginRight: listOpen ? 0 : -20,
+          pointerEvents: listOpen ? "auto" : "none",
+        }}
+      >
+        <div className="p-4 space-y-3 border-b" style={{ borderColor: t.border }}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: t.green }}>
+                <InboxIcon size={14} color="#FFFFFF" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold truncate" style={{ color: t.text }}>
+                  Receipt Inbox
+                </p>
+                <p className="text-[10px]" style={{ color: t.textMuted }}>
+                  {receipts.length} submissions
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setListOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: t.surfaceAlt }} title="Hide inbox list">
+              <PanelLeftClose size={15} color={t.textMuted} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: t.surfaceAlt }}>
+            <Search size={15} color={t.textMuted} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search sender or merchant" className="bg-transparent outline-none text-sm flex-1" style={{ color: t.text }} />
+          </div>
+
+          <div className="flex gap-1.5 overflow-x-auto">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
+                style={filter === f.key ? { background: t.green, color: "#fff" } : { background: t.surfaceAlt, color: t.textMuted }}
+              >
+                {f.label} · {counts[f.key] ?? 0}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+          {filtered.length === 0 && (
+            <p className="text-xs text-center py-8" style={{ color: t.textMuted }}>
+              No receipts match this filter.
+            </p>
+          )}
+          {filtered.map((m) => {
+            const meta = statusMeta(t, m.status);
+            return (
+              <button
+                key={m.id}
+                onClick={() => setSelectedId(m.id)}
+                className="w-full text-left px-3 py-3 rounded-xl transition-colors"
+                style={{ background: selected?.id === m.id ? t.surfaceAlt : "transparent" }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: meta.tone }} />
+                      <p className="text-sm font-semibold truncate" style={{ color: t.text }}>
+                        {m.sender_name}
+                      </p>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>
+                      {dateOnly(m.createdAt)} · {m.receipts.length} receipt{m.receipts.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold flex-shrink-0" style={{ color: t.text }}>
+                    {formatAmount(m.grand_total, m.receipts[0]?.currency)}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {!listOpen && (
+        <button
+          onClick={() => setListOpen(true)}
+          className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2.5 py-3 rounded-r-2xl shadow-lg z-10"
+          style={{ background: t.surface, color: t.green }}
+          title="Show inbox list"
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+      )}
+
+      {/* DETAIL */}
+      <div className="flex-1 rounded-2xl shadow-xl overflow-hidden" style={{ background: t.surface }}>
+        {!selected ? (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-sm" style={{ color: t.textMuted }}>
+              Select a receipt to view details.
+            </p>
+          </div>
+        ) : (
+          <div className="h-full overflow-y-auto p-8 space-y-7">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs" style={{ color: t.textMuted }}>
+                  {dateTime(selected.createdAt)} · via {selected.source}
+                </p>
+                <h2 className="text-2xl font-bold mt-0.5" style={{ color: t.text }}>
+                  {selected.sender_name}
+                </h2>
+                <div className="mt-1.5">
+                  <StatusBadge status={selected.status} t={t} />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => setEditing(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: t.surfaceAlt }} title="Edit receipt values">
+                  <Pencil size={15} color={t.text} />
+                </button>
+                <button onClick={() => onDelete(selected.id)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: `${t.danger}1a` }} title="Delete this submission">
+                  <Trash2 size={15} color={t.danger} />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {selected.receipts.map((r, i) => (
+                <div key={i} className="rounded-xl p-4 space-y-2" style={{ background: t.surfaceAlt }}>
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-sm" style={{ color: t.text }}>
+                      {r.merchant_name}
+                    </p>
+                    <span className="font-mono text-sm font-semibold" style={{ color: t.text }}>
+                      {formatAmount(r.total_amount, r.currency)}
+                    </span>
+                  </div>
+                  <p className="text-[11px]" style={{ color: t.textMuted }}>
+                    {dateOnly(r.date)} {r.time ? `· ${r.time}` : ""}
+                  </p>
+                  {r.items.length > 0 && (
+                    <div className="pt-1 space-y-1">
+                      {r.items.map((it, ii) => (
+                        <div key={ii} className="flex items-center justify-between text-xs">
+                          <span style={{ color: t.text, opacity: 0.85 }}>{it.description}</span>
+                          <span className="font-mono" style={{ color: t.textMuted }}>
+                            {formatAmount(it.price, r.currency)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {r.drive_link && (
+                    <a href={r.drive_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold pt-1" style={{ color: t.green }}>
+                      <ExternalLink size={12} /> View original photo
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between text-sm font-bold pt-3 border-t" style={{ borderColor: t.border, color: t.text }}>
+              <span>Grand Total</span>
+              <span className="font-mono">{formatAmount(selected.grand_total, selected.receipts[0]?.currency)}</span>
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-2 flex-wrap">
+              <button onClick={() => exportMessageCsv(selected)} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: t.green }}>
+                <FileDown size={15} />
+                Export CSV
+              </button>
+
+              {selected.excel_link && (
+                <a
+                  href={selected.excel_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background: t.surfaceAlt, color: t.text }}
+                >
+                  <ExternalLink size={15} />
+                  Open spreadsheet
+                </a>
+              )}
+
+              <StatusDropdown t={t} value={selected.status} onChange={(s) => onStatusChange(selected.id, s)} />
+            </div>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
     </div>
   );
 }
@@ -1054,374 +1140,369 @@ function AddCardButton({ accent, onCreate, disabled }: { accent: string; onCreat
    MAIN DASHBOARD — default export, owns all app state
    ========================================================================= */
 
-export default function Dashboard() {
-  const accent = PALETTE.amber;
-  const [mode, setMode] = useState<"light" | "dark">("dark");
-  const [accounts, setAccounts] = useState<Account[]>(seedAccounts());
-  const [activeAccountIndex, setActiveAccountIndex] = useState(0);
-  const [receipts, setReceipts] = useState<Receipt[]>(() => seedReceipts(seedAccounts()));
-  const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>(() => seedReceipts(seedAccounts()).map(receiptToTransaction));
-  const [history, setHistory] = useState<HistoryEntry[]>(() => seedReceipts(seedAccounts()).map(receiptToHistoryEntry));
+export default function LifeReceiptDashboard() {
+  const [mode, setMode] = useState<Mode>("light");
+  const t = THEME[mode];
+
+  const [receipts, setReceipts] = useState<ReceiptMessage[]>([]);
+  const [receiptsLoaded, setReceiptsLoaded] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [toasts, setToasts] = useState<AppNotification[]>([]);
   const [query, setQuery] = useState("");
   const [range, setRange] = useState<DateRange>("6m");
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<View>("dashboard");
-  const [requestTransfer, setRequestTransfer] = useState<"left" | "right">("right");
-  const [sidebarFilter, setSidebarFilter] = useState<"all" | "processing" | "pending" | "complete">("all");
-  const quickUploadRef = useRef<HTMLInputElement>(null);
+  const [sidebarFilter, setSidebarFilter] = useState<string>("all");
+  const [activeSenderIndex, setActiveSenderIndex] = useState(0);
+  const [focusReceiptId, setFocusReceiptId] = useState<string | null>(null);
 
-  const role = accounts[activeAccountIndex]?.role ?? "Viewer";
-  const canManage = role !== "Viewer"; // Admin + User can upload/delete/reassign/add cards; Viewer is read-only
+  const receiptsRef = useRef<ReceiptMessage[]>([]);
+  const hasLoadedOnceRef = useRef(false);
+  useEffect(() => {
+    receiptsRef.current = receipts;
+  }, [receipts]);
 
   const pushNotification = useCallback((n: Omit<AppNotification, "id" | "read" | "time">) => {
     const full: AppNotification = { ...n, id: uid("notif"), read: false, time: "now" };
     setNotifications((prev) => [full, ...prev]);
     setToasts((prev) => [...prev, full]);
     window.setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== full.id));
+      setToasts((prev) => prev.filter((toast) => toast.id !== full.id));
     }, 4500);
   }, []);
 
-  const advanceReceipt = useCallback(
-    (id: string, next: ReceiptStatus, delay: number) => {
-      window.setTimeout(() => {
-        setReceipts((prev) => prev.map((r) => (r.id === id && r.auto ? { ...r, status: next } : r)));
-        setTransactions((prev) => prev.map((t) => (t.receiptId === id ? { ...t, status: next } : t)));
-        if (next === "complete") {
-          setReceipts((prev) => {
-            const r = prev.find((x) => x.id === id);
-            if (r && r.auto) {
-              pushNotification({ type: "ocr_complete", title: "AI extraction finished", detail: `${r.vendor} — ${peso(r.amount)}`, receiptId: id });
-              setAccounts((accs) => accs.map((a) => (a.last4 === r.accountLast4 ? { ...a, balance: Math.max(0, a.balance - r.amount) } : a)));
-              setHistory((prevHist) => [...prevHist, receiptToHistoryEntry(r)]);
-            }
-            return prev;
-          });
-        }
-      }, delay);
+  const loadReceipts = useCallback(async () => {
+    try {
+      const payload = await fetchReceiptsApi();
+      const incoming = payload as unknown as ReceiptMessage[];
+
+      if (hasLoadedOnceRef.current) {
+        const prevById = new Map(receiptsRef.current.map((m) => [m.id, m]));
+        incoming.forEach((m) => {
+          const prev = prevById.get(m.id);
+          if (!prev) {
+            pushNotification({ type: "new_receipt", title: "New receipt received", detail: `${m.sender_name} — ${formatAmount(m.grand_total, m.receipts[0]?.currency)}`, receiptId: m.id });
+          } else if (prev.status !== m.status) {
+            const failed = m.status.trim().toLowerCase() === "failed";
+            pushNotification({
+              type: failed ? "processing_failed" : "status_changed",
+              title: `${m.sender_name}'s receipt is now ${m.status}`,
+              detail: formatAmount(m.grand_total, m.receipts[0]?.currency),
+              receiptId: m.id,
+            });
+          }
+        });
+      }
+
+      setReceipts(incoming);
+    } catch (error) {
+      console.error("Unable to load receipts from backend", error);
+    } finally {
+      hasLoadedOnceRef.current = true;
+      setReceiptsLoaded(true);
+    }
+  }, [pushNotification]);
+
+  useEffect(() => {
+    void loadReceipts();
+    const interval = window.setInterval(() => void loadReceipts(), 20000);
+    return () => window.clearInterval(interval);
+  }, [loadReceipts]);
+
+  const deleteMessage = useCallback((id: string) => {
+    setReceipts((prev) => prev.filter((m) => m.id !== id));
+    void deleteReceiptApi(id).catch((error: unknown) => console.error("Failed to delete receipt", error));
+  }, []);
+
+  const changeStatus = useCallback(
+    (id: string, status: string) => {
+      setReceipts((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
+      void updateReceiptApi(id, { status }).catch((error) => {
+        console.error("Failed to update status", error);
+        pushNotification({ type: "save_failed", title: "Status update failed", detail: "Could not sync with the server.", receiptId: id });
+      });
     },
     [pushNotification]
   );
 
-  const handleUpload = useCallback(
-    (source: "upload" | "camera" | "email", fileName?: string, imagePreview?: string) => {
-      const vendor = VENDORS[Math.floor(Math.random() * VENDORS.length)];
-      const amount = Math.round((Math.random() * 180 + 8) * 100) / 100;
-      const account = accounts[activeAccountIndex];
-      const payment = PAYMENT_METHODS[Math.floor(Math.random() * PAYMENT_METHODS.length)];
-      const receipt = makeReceipt({ vendor, amount, date: new Date(), status: "processing", source, accountLast4: account.last4, payment, imagePreview });
-
-      setReceipts((prev) => [receipt, ...prev]);
-      setTransactions((prev) => [receiptToTransaction(receipt), ...prev]);
-      setSelectedReceiptId(receipt.id);
-      setView("inbox");
-
-      pushNotification({
-        type: source === "email" ? "email" : "new_receipt",
-        title: source === "email" ? "New email received" : "New receipt received",
-        detail: `${vendor.name}${fileName ? ` — ${fileName}` : ""} · Processing`,
-        receiptId: receipt.id,
-      });
-
-      advanceReceipt(receipt.id, "ongoing", 3000);
-      advanceReceipt(receipt.id, "pending", 6000);
-      advanceReceipt(receipt.id, "complete", 9000);
+  const saveEdit = useCallback(
+    (id: string, updates: Partial<ReceiptMessage>) => {
+      setReceipts((prev) =>
+        prev.map((m) => {
+          if (m.id !== id) return m;
+          const merged = { ...m, ...updates } as ReceiptMessage;
+          merged.grand_total = merged.receipts.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0);
+          return merged;
+        })
+      );
+      void updateReceiptApi(id, updates)
+        .then((saved) => {
+          setReceipts((prev) => prev.map((m) => (m.id === id ? (saved as unknown as ReceiptMessage) : m)));
+        })
+        .catch((error) => {
+          console.error("Failed to save receipt edits", error);
+          pushNotification({ type: "save_failed", title: "Save failed", detail: "Your edits couldn't be synced to the server.", receiptId: id });
+        });
     },
-    [accounts, activeAccountIndex, advanceReceipt, pushNotification]
+    [pushNotification]
   );
 
-  const handleQuickUploadFile = useCallback(
-    async (files: FileList | null) => {
-      if (!files || !files.length) return;
-      const file = files[0];
-      const preview = await readImagePreview(file);
-      handleUpload("upload", file.name, preview);
-    },
-    [handleUpload]
-  );
-
-  const deleteReceipt = useCallback((id: string) => {
-    // Receipts + live transactions can be removed, but `history` (feeding the graph) is untouched on purpose.
-    setReceipts((prev) => prev.filter((r) => r.id !== id));
-    setTransactions((prev) => prev.filter((t) => t.receiptId !== id));
-    setSelectedReceiptId((cur) => (cur === id ? null : cur));
-  }, []);
-
-  const reassignStatus = useCallback((id: string, status: ReceiptStatus) => {
-    setReceipts((prev) =>
-      prev.map((r) => {
-        if (r.id !== id) return r;
-        const wasComplete = r.status === "complete";
-        const updated: Receipt = { ...r, status, auto: false };
-        if (status === "complete" && !wasComplete) {
-          setHistory((prevHist) => [...prevHist, receiptToHistoryEntry(updated)]);
-          setAccounts((accs) => accs.map((a) => (a.last4 === r.accountLast4 ? { ...a, balance: Math.max(0, a.balance - r.amount) } : a)));
-        }
-        return updated;
-      })
-    );
-    setTransactions((prev) => prev.map((t) => (t.receiptId === id ? { ...t, status } : t)));
-  }, []);
-
-  const openReceipt = useCallback((id: string) => {
-    setSelectedReceiptId(id);
+  const openReceipt = useCallback((id?: string) => {
+    if (id) setFocusReceiptId(id);
     setView("inbox");
   }, []);
 
-  const updateCredentials = useCallback((id: string, email: string, password: string) => {
-    setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, email, password } : a)));
-  }, []);
-
-  const createCustomCard = useCallback((color: string) => {
-    setAccounts((prev) => [...prev, { id: uid("acc"), last4: randomLast4(), name: "New Cardholder", role: "User", email: "", password: "", avatarColor: color, balance: 0 }]);
-  }, []);
-
-  const refresh = () => {
+  const refresh = async () => {
     setRefreshing(true);
-    window.setTimeout(() => setRefreshing(false), 1200);
+    await loadReceipts();
+    setRefreshing(false);
   };
 
-  const account = accounts[activeAccountIndex];
-  const chartData = useMemo(() => buildSeries(history, account.last4, range), [history, account.last4, range]);
+  const flatRows = useMemo(() => flattenReceipts(receipts), [receipts]);
+  const senders = useMemo(() => summarizeSenders(receipts), [receipts]);
 
-  const latestByAccount = useMemo(() => {
-    const map = new Map<string, Receipt>();
-    receipts.forEach((r) => {
-      if (!map.has(r.accountLast4)) map.set(r.accountLast4, r);
-    });
-    return map;
-  }, [receipts]);
+  const chartData = useMemo(() => buildSeries(flatRows, range), [flatRows, range]);
+  const currentTotal = chartData[chartData.length - 1]?.value ?? 0;
+  const prevValue = chartData.length > 1 ? chartData[chartData.length - 2].value : currentTotal;
+  const growthPct = prevValue ? (((currentTotal - prevValue) / prevValue) * 100).toFixed(2) : "0.00";
+  const isPositive = Number(growthPct) >= 0;
 
-  const carouselCards: CarouselCard[] = accounts.map((a, i) => {
-    const latest = latestByAccount.get(a.last4);
-    return {
-      background: i === 0 && !latest ? `linear-gradient(135deg, ${PALETTE.peach} 0%, ${PALETTE.sand} 100%)` : `linear-gradient(135deg, ${a.avatarColor} 0%, ${PALETTE.rust} 100%)`,
-      label: latest ? latest.vendor : a.name,
-      balance: peso(a.balance),
-      last4: a.last4,
-      dateLabel: latest ? dateAndYear(latest.date) : undefined,
-      contactNumber: latest?.contactNumber,
-      items: latest?.lineItems.map((li) => ({ name: li.name, qty: li.qty, price: li.price })),
-    };
-  });
+  const carouselCards: CarouselCard[] = senders.map((s, i) => ({
+    background: CARD_GRADIENTS[i % CARD_GRADIENTS.length],
+    label: s.name,
+    balance: formatAmount(s.total, s.currency),
+    last4: String(s.messageCount).padStart(2, "0"),
+    dateLabel: s.latestDate ? dateOnly(s.latestDate) : undefined,
+    contactNumber: s.latestMerchant,
+    items: s.latestItems,
+  }));
 
   const pipelineCounts = useMemo(() => {
-    const counts: Record<string, number> = { processing: 0, ongoing: 0, pending: 0, complete: 0 };
-    transactions.forEach((t) => {
-      if (t.status in counts) counts[t.status] += 1;
+    const counts: Record<string, number> = {};
+    receipts.forEach((m) => {
+      const key = m.status.trim().toLowerCase();
+      counts[key] = (counts[key] ?? 0) + 1;
     });
     return counts;
-  }, [transactions]);
+  }, [receipts]);
 
   const q = query.trim().toLowerCase();
-  const visibleTransactions = transactions
-    .filter((t) => t.accountLast4 === account.last4)
-    .filter((t) => (q ? [t.vendor, t.category, t.status, t.paymentMethod, t.paymentType, t.emailSource ?? "", dateAndYear(t.date)].join(" ").toLowerCase().includes(q) : true));
+  const visibleRows = flatRows
+    .filter((r) => (sidebarFilter === "all" ? true : r.status.trim().toLowerCase() === sidebarFilter))
+    .filter((r) => (q ? [r.sender, r.merchant, r.status, dateOnly(r.date)].join(" ").toLowerCase().includes(q) : true));
 
-  const sidebarReceipts = receipts.filter((r) => r.accountLast4 === account.last4).filter((r) => (sidebarFilter === "all" ? true : r.status === sidebarFilter)).slice(0, 6);
+  const openInboxCount = receipts.filter((m) => m.status.trim().toLowerCase() !== "confirmed").length;
 
-  if (receipts.length === 0) {
-    return <UploadScreen accent={accent} onUpload={handleUpload} />;
+  const SIDEBAR_FILTERS = STATUS_FILTERS;
+
+  if (!receiptsLoaded) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center" style={{ background: t.greenDeep, color: t.onBar }}>
+        <div className="flex items-center gap-3 text-sm" style={{ color: t.onBarMuted }}>
+          <RefreshCw size={16} className="animate-spin" />
+          Loading your receipts…
+        </div>
+      </div>
+    );
   }
 
-  const SIDEBAR_FILTERS: { key: typeof sidebarFilter; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "processing", label: "Processing" },
-    { key: "pending", label: "Pending" },
-    { key: "complete", label: "Complete" },
-  ];
-
   return (
-    <div className="relative h-screen w-full overflow-hidden" style={{ background: PALETTE.deepest }}>
-      <ViewSwitcher view={view} setView={setView} accent={accent} onUploadClick={() => quickUploadRef.current?.click()} />
-      <input ref={quickUploadRef} type="file" accept=".jpg,.jpeg,.png,.heic,.pdf,.xlsx,.xls" className="hidden" onChange={(e) => handleQuickUploadFile(e.target.files)} />
-      <ToastStack toasts={toasts} onOpenReceipt={openReceipt} />
+    <div className="flex flex-col h-screen w-full font-sans transition-colors duration-500" style={{ background: t.pageBg, color: t.text }}>
+      <ToastStack t={t} toasts={toasts} onOpenReceipt={openReceipt} />
+      <ChatAssistant accent={t.accent} currency="PHP" buildContext={() => buildSpendingContext(receipts, "PHP")} />
 
+      {/* TOP BAR */}
+      <div className="flex items-center justify-between px-5 py-3 flex-shrink-0 transition-colors duration-500" style={{ background: t.barBg }}>
+        <div className="w-56">
+          <NotificationBell
+            t={t}
+            notifications={notifications}
+            onMarkRead={(id) => setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))}
+            onMarkAllRead={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
+            onOpenReceipt={openReceipt}
+          />
+        </div>
+
+        <NavPill view={view} setView={setView} t={t} />
+
+        <div className="w-56 flex justify-end items-center gap-3">
+          <button
+            onClick={() => setMode((m) => (m === "light" ? "dark" : "light"))}
+            className="relative flex items-center w-14 h-8 rounded-full px-1 transition-colors duration-500"
+            style={{ background: "rgba(255,255,255,0.14)" }}
+            title="Toggle light / dark mode"
+          >
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center transition-transform duration-500"
+              style={{ background: t.accent, transform: mode === "dark" ? "translateX(24px)" : "translateX(0px)" }}
+            >
+              {mode === "dark" ? <Moon size={13} color={t.accentInk} /> : <Sun size={13} color={t.accentInk} />}
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* BODY */}
       <AnimatePresence mode="wait">
         {view === "inbox" ? (
-          <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} className="h-full p-6 pt-20">
-            <ReceiptInbox receipts={receipts} selectedReceiptId={selectedReceiptId} onSelect={setSelectedReceiptId} onDelete={deleteReceipt} onReassignStatus={reassignStatus} canManage={canManage} />
+          <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="flex-1 min-h-0 flex">
+            <ReceiptInboxView t={t} receipts={receipts} focusId={focusReceiptId} onDelete={deleteMessage} onStatusChange={changeStatus} onSaveEdit={saveEdit} />
           </motion.div>
         ) : (
-          <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} className="h-full">
-            <div
-              className="relative flex h-full w-full font-sans antialiased overflow-hidden transition-colors duration-500"
-              style={{ background: mode === "dark" ? PALETTE.deepest : PALETTE.sand, color: mode === "dark" ? PALETTE.white : PALETTE.deepest }}
-            >
-              <div className="pointer-events-none absolute inset-0 -z-0">
-                <div className="absolute -top-32 left-1/3 w-[560px] h-[440px] rounded-full blur-[120px]" style={{ background: `${accent}1f` }} />
-                <div className="absolute bottom-0 right-0 w-[460px] h-[400px] rounded-full blur-[120px]" style={{ background: `${PALETTE.sage}22` }} />
+          <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="flex flex-1 overflow-hidden">
+            {/* SIDEBAR */}
+            <aside className="w-60 flex-shrink-0 hidden md:flex flex-col p-5 transition-colors duration-500" style={{ background: t.sidebarBg, color: t.onBar }}>
+              <p className="text-[10px] uppercase tracking-wider opacity-50 mb-3 px-1">Navigation</p>
+              <nav className="space-y-1">
+                <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold" style={{ background: t.accent, color: t.accentInk }}>
+                  <LayoutDashboard size={16} />
+                  Dashboard
+                </button>
+                <button onClick={() => setView("inbox")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm hover:bg-white/5" style={{ color: t.onBarMuted }}>
+                  <span className="flex items-center gap-3">
+                    <InboxIcon size={16} />
+                    Receipt Inbox
+                  </span>
+                  {openInboxCount > 0 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: t.accent, color: t.accentInk }}>
+                      {openInboxCount}
+                    </span>
+                  )}
+                </button>
+              </nav>
+            </aside>
+
+            {/* MAIN COLUMN */}
+            <main className="flex-1 flex flex-col overflow-y-auto">
+              <div className="flex items-center gap-4 px-6 py-4 border-b transition-colors duration-500" style={{ borderColor: t.border, background: t.surface }}>
+                <button onClick={refresh} title="Refresh dashboard" className="shrink-0" style={{ color: t.textMuted }}>
+                  <motion.span animate={refreshing ? { rotate: 360 } : { rotate: 0 }} transition={refreshing ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}} className="inline-block">
+                    <RefreshCw size={15} />
+                  </motion.span>
+                </button>
+                <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: t.surfaceAlt }}>
+                  <Search size={16} color={t.textMuted} />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search sender, merchant, date, status"
+                    className="bg-transparent outline-none text-sm flex-1"
+                    style={{ color: t.text }}
+                  />
+                </div>
               </div>
 
-              <main className="relative z-10 flex-1 flex flex-col overflow-y-auto">
-                <div className="flex items-center justify-between px-8 py-5 border-b border-white/5">
-                  <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-xl px-3 py-2 w-80">
-                    <button onClick={refresh} title="Refresh dashboard" className="text-white/50 hover:text-white transition-colors shrink-0">
-                      <motion.span animate={refreshing ? { rotate: 360 } : { rotate: 0 }} transition={refreshing ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}} className="inline-block">
-                        <RotateCw size={15} />
-                      </motion.span>
-                    </button>
-                    <div className="w-px h-4 bg-white/10 shrink-0" />
-                    <Search size={15} className="text-white/40 shrink-0" />
-                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search receipts, vendors, dates, payment type…" className="bg-transparent outline-none text-sm placeholder:text-white/30 w-full" />
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <NotificationCenter
-                      notifications={notifications}
-                      accent={accent}
-                      onMarkRead={(id) => setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))}
-                      onMarkAllRead={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
-                      onOpenReceipt={openReceipt}
-                    />
-
-                    <button className="text-white/60 hover:text-white transition-colors" onClick={() => setMode((m) => (m === "dark" ? "light" : "dark"))} title="Toggle theme">
-                      <motion.span key={mode} initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} transition={{ duration: 0.3 }}>
-                        {mode === "dark" ? <Moon size={16} style={{ color: accent }} /> : <Sun size={16} style={{ color: accent }} />}
-                      </motion.span>
-                    </button>
-
-                    <AccountSwitcher accounts={accounts} activeIndex={activeAccountIndex} onSwitch={setActiveAccountIndex} onUpdateCredentials={updateCredentials} />
-                  </div>
-                </div>
-
-                <div className="p-8 space-y-4">
-                  {/* Request/Transfer — upper-center, OUTSIDE the graph card (item 4) */}
-                  <div className="flex justify-center">
-                    <div className="w-64">
-                      <PremiumSlider leftLabel="Request" rightLabel="Transfer" leftIcon={ArrowDownLeft} rightIcon={ArrowUpRight} value={requestTransfer} onChange={setRequestTransfer} accent={accent} />
+              <div className="p-6 space-y-6">
+                <section className="rounded-2xl p-6 transition-colors duration-500" style={{ background: t.surface, border: `1px solid ${t.border}` }}>
+                  <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
+                    <p className="text-sm font-semibold" style={{ color: t.textMuted }}>
+                      Transaction Receipt History <span style={{ color: t.textMuted, opacity: 0.6 }}>· All senders</span>
+                    </p>
+                    <div className="flex gap-1 rounded-full p-1" style={{ background: t.surfaceAlt }}>
+                      {RANGES.map((r) => (
+                        <button
+                          key={r.key}
+                          onClick={() => setRange(r.key)}
+                          className="px-3 py-1 rounded-full text-xs font-semibold transition-colors"
+                          style={range === r.key ? { background: t.green, color: "#fff" } : { color: t.textMuted }}
+                        >
+                          {r.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <motion.div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-md p-6 relative overflow-hidden" whileHover={{ borderColor: `${accent}55` }}>
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#E89131]/10 via-transparent to-[#034E34]/5 pointer-events-none" />
+                  <div className="flex items-baseline gap-2 mb-4">
+                    <span className="text-3xl font-bold">{formatAmount(currentTotal)}</span>
+                    <span className="text-sm font-semibold flex items-center gap-0.5" style={{ color: isPositive ? t.green : t.danger }}>
+                      {isPositive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                      {Math.abs(Number(growthPct))}%
+                    </span>
+                  </div>
 
-                    <div className="relative flex items-start justify-between mb-6 flex-wrap gap-3">
-                      <div>
-                        <h2 className="text-sm text-white/50 mb-1">
-                          Transaction Receipt History <span className="text-white/30">· •••• {account.last4}</span>
-                        </h2>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-3xl font-semibold" style={{ color: mode === "dark" ? PALETTE.white : PALETTE.deepest }}>
-                            {peso(account.balance)}
-                          </span>
-                          <span className="text-xs font-medium flex items-center gap-0.5" style={{ color: PALETTE.sage }}>
-                            <ArrowUpRight size={12} /> 2.92%
-                          </span>
+                  <TransactionHistoryChart data={chartData} t={t} />
+                </section>
+
+                <PipelineStatus counts={pipelineCounts} t={t} />
+                <StatusUpdateStrip receipts={receipts} t={t} onOpen={openReceipt} />
+              </div>
+            </main>
+
+            {/* RIGHT PANEL */}
+            <aside className="w-96 flex-shrink-0 hidden lg:flex flex-col p-6 space-y-6 overflow-y-auto border-l transition-colors duration-500" style={{ background: t.surface, borderColor: t.border }}>
+              <div className="flex items-center gap-2">
+                <Users size={16} color={t.textMuted} />
+                <h2 className="font-bold text-lg">Senders</h2>
+              </div>
+
+              {carouselCards.length > 0 ? (
+                <CardCarousel cards={carouselCards} activeIndex={activeSenderIndex} onActiveChange={setActiveSenderIndex} />
+              ) : (
+                <div className="rounded-2xl border border-dashed py-10 flex items-center justify-center text-xs" style={{ borderColor: t.border, color: t.textMuted }}>
+                  No senders yet
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {SIDEBAR_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setSidebarFilter(f.key)}
+                    className="text-[11px] px-3 py-1.5 rounded-full transition-colors"
+                    style={{ background: sidebarFilter === f.key ? t.green : t.surfaceAlt, color: sidebarFilter === f.key ? "#fff" : t.textMuted }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm">Recent Receipts</h3>
+                <span className="text-xs font-semibold" style={{ color: t.accent }}>
+                  {visibleRows.length} total
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                {visibleRows.slice(0, 10).map((row, i) => {
+                  const meta = statusMeta(t, row.status);
+                  return (
+                    <button key={`${row.messageId}_${i}`} onClick={() => openReceipt(row.messageId)} className="w-full flex items-center justify-between px-2 py-3 rounded-xl transition-colors text-left hover:opacity-90">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0" style={{ background: t.green, color: "#fff" }}>
+                          {row.merchant.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm truncate" style={{ color: t.text }}>
+                            {row.merchant}
+                          </p>
+                          <p className="text-[11px] truncate" style={{ color: t.textMuted }}>
+                            {row.sender}
+                          </p>
+                          <p className="text-[10.5px]" style={{ color: t.textMuted, opacity: 0.7 }}>
+                            {dateOnly(row.date)} {row.time ? `· ${row.time}` : ""}
+                          </p>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1 bg-white/5 rounded-full p-1">
-                        {RANGES.map((r) => (
-                          <button
-                            key={r.key}
-                            onClick={() => setRange(r.key)}
-                            className="text-xs px-3 py-1.5 rounded-full transition-colors"
-                            style={{ background: range === r.key ? PALETTE.white : "transparent", color: range === r.key ? PALETTE.deepest : "#ffffff80", fontWeight: range === r.key ? 500 : 400 }}
-                          >
-                            {r.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <TransactionHistoryChart data={chartData} accent={accent} />
-                  </motion.div>
-
-                  <PendingReviewStatus counts={pipelineCounts} />
-                  <StatusUpdateBar receipts={receipts.filter((r) => r.accountLast4 === account.last4)} onOpen={openReceipt} />
-                </div>
-              </main>
-
-              <aside className="relative z-10 w-96 border-l border-white/5 p-6 flex flex-col overflow-y-auto">
-                <div className="flex items-center justify-between mb-6 w-full">
-                  <h3 className="font-medium text-sm text-white/50">My cards</h3>
-                  <AddCardButton accent={accent} onCreate={createCustomCard} disabled={!canManage} />
-                </div>
-
-                <CardCarousel cards={carouselCards} activeIndex={activeAccountIndex} onActiveChange={setActiveAccountIndex} />
-
-                {/* Receipt status filter — mirrors the Receipt Inbox filters exactly (item 17) */}
-                <div className="mt-5 flex items-center gap-1.5 flex-wrap">
-                  {SIDEBAR_FILTERS.map((f) => (
-                    <button
-                      key={f.key}
-                      onClick={() => setSidebarFilter(f.key)}
-                      className="text-[11px] px-3 py-1.5 rounded-full transition-colors"
-                      style={{
-                        background: sidebarFilter === f.key ? PALETTE.white : "rgba(255,255,255,0.05)",
-                        color: sidebarFilter === f.key ? PALETTE.deepest : "#ffffff80",
-                        fontWeight: sidebarFilter === f.key ? 500 : 400,
-                      }}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-3 space-y-1.5">
-                  {sidebarReceipts.map((r) => {
-                    const meta = PIPELINE_META[r.status as keyof typeof PIPELINE_META] ?? PIPELINE_META.complete;
-                    return (
-                      <button key={r.id} onClick={() => openReceipt(r.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white/[0.04] transition-colors text-left">
-                        <span className="text-xs text-white/80 truncate">{r.vendor}</span>
-                        <span className="text-[10px] font-medium shrink-0" style={{ color: meta.tone }}>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className="text-sm font-medium" style={{ color: t.text }}>
+                          {formatAmount(row.amount, row.currency)}
+                        </span>
+                        <span className="flex items-center gap-1 text-[9.5px] font-medium rounded-full px-1.5 py-0.5" style={{ color: meta.tone, background: `${meta.tone}1a` }}>
+                          <meta.icon size={9} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
                           {meta.label}
                         </span>
-                      </button>
-                    );
-                  })}
-                  {sidebarReceipts.length === 0 && <p className="text-center text-[11px] text-white/25 py-3">Nothing here yet.</p>}
-                </div>
-
-                <div className="flex items-center justify-between mt-8 mb-4">
-                  <h3 className="font-medium text-sm text-white/50">Recent Transactions</h3>
-                  <span className="text-xs" style={{ color: accent }}>
-                    {visibleTransactions.length} total
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  {visibleTransactions.slice(0, 8).map((t) => {
-                    const meta = PIPELINE_META[t.status as keyof typeof PIPELINE_META];
-                    return (
-                      <button key={t.id} onClick={() => openReceipt(t.receiptId)} className="w-full flex items-center justify-between px-2 py-3 rounded-xl hover:bg-white/[0.03] transition-colors text-left">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0" style={{ background: accent, color: PALETTE.deepest }}>
-                            {t.vendor.charAt(0)}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1">
-                              <p className="text-sm text-white truncate">{t.vendor}</p>
-                              {t.emailSource && <Mail size={10} className="text-white/30 shrink-0" />}
-                            </div>
-                            <p className="text-[11px] text-white/40 truncate flex items-center gap-1">
-                              {t.category} · {t.paymentType === "cash" ? <Banknote size={9} /> : <CreditCard size={9} />} {t.paymentMethod}
-                            </p>
-                            <p className="text-[10.5px] text-white/25">
-                              {dateAndYear(t.date)} · {t.time}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className="text-sm font-medium text-white">{peso(t.amount)}</span>
-                          {meta && (
-                            <span className="flex items-center gap-1 text-[9.5px] font-medium rounded-full px-1.5 py-0.5" style={{ color: meta.tone, background: `${meta.tone}1a` }}>
-                              <meta.icon size={9} className={meta.spin ? "animate-spin" : ""} />
-                              {meta.label}
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {visibleTransactions.length === 0 && <p className="text-center text-xs text-white/30 py-8">No transactions yet.</p>}
-                </div>
-              </aside>
-            </div>
+                      </div>
+                    </button>
+                  );
+                })}
+                {visibleRows.length === 0 && (
+                  <p className="text-center text-xs py-8" style={{ color: t.textMuted }}>
+                    No receipts yet.
+                  </p>
+                )}
+              </div>
+            </aside>
           </motion.div>
         )}
       </AnimatePresence>

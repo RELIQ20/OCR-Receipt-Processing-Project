@@ -1,6 +1,25 @@
 /* src/index.css */
 @import "tailwindcss";
 
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
 .scroll-stack-scroller {
   position: relative;
   width: 100%;
