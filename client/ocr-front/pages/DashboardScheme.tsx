@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Plus,
   Users,
+  LogOut,
 } from "lucide-react";
 import { CardCarousel, type CarouselCard } from "./CardCarousel";
 import { ChatAssistant } from "./ChatAssistant";
@@ -1210,7 +1211,7 @@ function ReceiptInboxView({
    MAIN DASHBOARD — default export, owns all app state
    ========================================================================= */
 
-export default function LifeReceiptDashboard() {
+export default function LifeReceiptDashboard({ onLogout }: { onLogout: () => Promise<void> | void }) {
   const [mode, setMode] = useState<Mode>("light");
   const t = THEME[mode];
 
@@ -1396,6 +1397,15 @@ export default function LifeReceiptDashboard() {
         <NavPill view={view} setView={setView} t={t} />
 
         <div className="w-56 flex justify-end items-center gap-3">
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-colors"
+            style={{ color: t.onBar, borderColor: "rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.08)" }}
+            title="Log out"
+          >
+            <LogOut size={14} />
+            Logout
+          </button>
           <button
             onClick={() => setMode((m) => (m === "light" ? "dark" : "light"))}
             className="relative flex items-center w-14 h-8 rounded-full px-1 transition-colors duration-500"
