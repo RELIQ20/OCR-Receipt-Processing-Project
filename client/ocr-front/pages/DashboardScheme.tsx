@@ -312,6 +312,80 @@ function smoothPath(points: { x: number; y: number }[]) {
   return d;
 }
 
+function resolvePhotoSrcCandidates(link?: string) {
+  if (!link) return [];
+
+  const fileIdFromLink = (candidate: string) => {
+    const match = candidate.match(/(?:\/file\/d\/|\/open\?id=|id=)([A-Za-z0-9_-]+)/);
+    if (match?.[1]) return match[1];
+    const directMatch = candidate.match(/\/uc\?export=download&id=([A-Za-z0-9_-]+)/);
+    if (directMatch?.[1]) return directMatch[1];
+    const docsMatch = candidate.match(/\/document\/d\/([A-Za-z0-9_-]+)/);
+    if (docsMatch?.[1]) return docsMatch[1];
+    return null;
+  };
+
+  const candidates: string[] = [];
+  const id = fileIdFromLink(link);
+
+  if (id) {
+    candidates.push(`https://drive.google.com/uc?export=view&id=${id}`);
+    candidates.push(`https://drive.google.com/uc?export=download&id=${id}`);
+    candidates.push(`https://drive.google.com/thumbnail?id=${id}`);
+  }
+
+  try {
+    const url = new URL(link);
+    if (/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(url.pathname)) {
+      candidates.push(link);
+    }
+  } catch {
+    if (/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(link)) {
+      candidates.push(link);
+    }
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+function ReceiptPhotoPreview({ link, merchant, t }: { link?: string; merchant: string; t: ThemeTokens }) {
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  if (!link) return null;
+
+  const previewOptions = resolvePhotoSrcCandidates(link);
+  const currentSrc = previewOptions[previewIndex];
+
+  return (
+    <div className="pt-2 space-y-2">
+      <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: t.green }}>
+        <ExternalLink size={12} /> View original photo
+      </a>
+      {!previewFailed && currentSrc && (
+        <img
+          src={currentSrc}
+          alt={`${merchant} receipt`}
+          loading="lazy"
+          className="w-full max-h-80 rounded-xl border object-contain"
+          style={{ borderColor: t.border, background: t.surfaceAlt }}
+          onError={() => {
+            if (previewIndex + 1 < previewOptions.length) {
+              setPreviewIndex((index) => index + 1);
+            } else {
+              setPreviewFailed(true);
+            }
+          }}
+        />
+      )}
+      {previewFailed && (
+        <p className="text-[11px]" style={{ color: t.textMuted }}>
+          Preview unavailable. Open the original photo link to view it.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Exports every merchant receipt + line item inside one WhatsApp submission as a CSV. */
 function exportMessageCsv(m: ReceiptMessage) {
   const header = ["Field", "Value"];
@@ -1094,11 +1168,7 @@ function ReceiptInboxView({
                       ))}
                     </div>
                   )}
-                  {r.drive_link && (
-                    <a href={r.drive_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold pt-1" style={{ color: t.green }}>
-                      <ExternalLink size={12} /> View original photo
-                    </a>
-                  )}
+                  {r.drive_link && <ReceiptPhotoPreview link={r.drive_link} merchant={r.merchant_name} t={t} />}
                 </div>
               ))}
             </div>
