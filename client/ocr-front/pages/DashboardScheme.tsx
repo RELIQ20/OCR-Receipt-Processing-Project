@@ -16,7 +16,6 @@ import {
   Check,
   X,
   FileText,
-  Receipt as ReceiptIcon,
   PanelLeftClose,
   PanelLeftOpen,
   Loader2,
@@ -34,11 +33,10 @@ import {
 import { CardCarousel, type CarouselCard } from "./CardCarousel";
 import { ChatAssistant } from "./ChatAssistant";
 import {
-  createReceipt as createReceiptApi,
+
   deleteReceipt as deleteReceiptApi,
   fetchReceipts as fetchReceiptsApi,
   updateReceipt as updateReceiptApi,
-  type ReceiptMessagePayload,
 } from "../src/lib/api";
 import { buildSpendingContext } from "./spendingContext";
 
