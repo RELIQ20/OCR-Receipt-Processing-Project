@@ -5,6 +5,7 @@ import { fetchSession, logout, type PublicUser } from "./lib/auth-client";
 
 export default function App() {
   const [user, setUser] = useState<PublicUser | null | undefined>(undefined);
+  const [showAuth, setShowAuth] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +29,7 @@ export default function App() {
   const handleLogout = async () => {
     await logout().catch(() => undefined);
     setUser(null);
+    setShowAuth(false);
   };
 
   if (user === undefined) {
@@ -35,12 +37,15 @@ export default function App() {
   }
 
   if (!user) {
-    return (
+    return showAuth ? (
       <AuthPage
         onAuthSuccess={(account) => {
           setUser(account);
+          setShowAuth(false);
         }}
       />
+    ) : (
+      <LandingPage onLogin={() => setShowAuth(true)} />
     );
   }
 
