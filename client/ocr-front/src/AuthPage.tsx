@@ -58,7 +58,7 @@ function Field({ icon: Icon, error, ...props }: InputHTMLAttributes<HTMLInputEle
           borderColor: error ? t.danger : t.border,
         }}
       >
-        <Icon size={15} color={t.textMuted} strokeWidth={1.8} />
+        <Icon color={t.textMuted} strokeWidth={1.8} />
         <input
           {...props}
           className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#5C6B65]/50"
