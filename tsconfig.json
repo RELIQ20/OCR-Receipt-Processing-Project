@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./client/ocr-front/tsconfig.json"
+    }
+  ]
+}
