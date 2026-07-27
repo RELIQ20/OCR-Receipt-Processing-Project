@@ -1,39 +1,50 @@
 import os
-import pandas as pd
+import sys
+from openpyxl import Workbook
+from openpyxl.styles import Font
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def generate_spreadsheet(receipt_data: dict, output_dir: str = "exports") -> str:
-    """Generates an Excel file and saves it to an exports directory."""
+def log(msg: str):
+    sys.stderr.write(f"[OcrReceipt] {msg}\n")
+    sys.stderr.flush()
 
-    # Create the exports folder if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+def generate_merged_spreadsheet(all_items: list, sender: str, grand_total: float) -> str:
+    """Generates a single Excel file grouping items from multiple receipts."""
+    log("Building consolidated Excel spreadsheet...")
+    samples_dir = os.path.join(BASE_DIR, "samples")
+    os.makedirs(samples_dir, exist_ok=True)
 
-    # Sanitize merchant name for the file name (prevents saving errors)
-    merchant = (
-        receipt_data.get("merchant_name", "Unknown").replace(
-            " ", "_").replace("/", "-")
-    )
-    excel_path = os.path.join(output_dir, f"receipt_{merchant}.xlsx")
+    file_path = os.path.join(samples_dir, f"receipts_merged_{sender}.xlsx")
 
-    # Create DataFrame from the items array
-    items_df = pd.DataFrame(receipt_data.get("items", []))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Consolidated Receipts"
 
-    # Add metadata columns to the DataFrame so every row has context
-    items_df["merchant_name"] = receipt_data.get("merchant_name")
-    items_df["date"] = receipt_data.get("date")
-    items_df["total_amount"] = receipt_data.get("total_amount")
+    # Headers (Flat Layout matching Rose Pharmacy template)
+    headers = ["Merchant Name", "Date", "Item Description", "Quantity", "Price"]
+    ws.append(headers)
 
-    # Reorder columns for readability
-    preferred_order = ["merchant_name", "date",
-                       "total_amount", "description", "price"]
-    actual_columns = [
-        col for col in preferred_order if col in items_df.columns]
+    for col in ["A1", "B1", "C1", "D1", "E1"]:
+        ws[col].font = Font(bold=True)
 
-    # If there are items, use the preferred order. Otherwise, handle empty receipts gracefully.
-    if not items_df.empty:
-        items_df = items_df[actual_columns]
+    # Append all extracted items (repeats merchant and date per row)
+    for item in all_items:
+        ws.append([item["merchant"], item["date"], item["description"], item.get("quantity", 1), item["price"]])
 
-    items_df.to_excel(excel_path, index=False)
+    # Add Grand Total Row directly below the items
+    ws.append(["", "", "", "GRAND TOTAL:", grand_total])
 
-    return excel_path
+    max_row = ws.max_row
+    ws[f"D{max_row}"].font = Font(bold=True)
+    ws[f"E{max_row}"].font = Font(bold=True)
+
+    # Adjust column widths for clean formatting
+    ws.column_dimensions["A"].width = 25
+    ws.column_dimensions["B"].width = 15
+    ws.column_dimensions["C"].width = 40
+    ws.column_dimensions["D"].width = 10
+    ws.column_dimensions["E"].width = 15
+
+    wb.save(file_path)
+    return file_path
