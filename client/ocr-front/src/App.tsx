@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import AuthPage from "./AuthPage";
-import Homepage from "./Homepage";
+import LandingPage from "./LandingPage";
 import LifeReceiptDashboard from "../pages/DashboardScheme";
 import { fetchSession, logout, type PublicUser } from "./lib/auth-client";
 
@@ -30,7 +30,7 @@ export default function App() {
         }}
       />
     ) : (
-      <Homepage onLogin={() => setShowAuth(true)} />
+      <LandingPage onLogin={() => setShowAuth(true)} />
     );
   }
 
