@@ -1,39 +1,50 @@
 import os
-
-from datetime import datetime, timezone
 from pymongo import MongoClient
+import pymongo
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(Path(__file__).parent / ".env")
 
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "lifewood_db"
 COLLECTION_NAME = "receipts"
 
+def save_batch_to_mongo(batch_record: dict) -> str:
+    """Saves a unified batch document containing all receipts to MongoDB."""
+    if not MONGO_URI:
+        raise ValueError("MONGO_URI not found in .env")
 
-def save_to_mongo(receipt_data: dict) -> str:
-    """Formats the extracted data and inserts it into MongoDB."""
     client = MongoClient(MONGO_URI)
     db = client[DB_NAME]
     collection = db[COLLECTION_NAME]
 
-    # 2. Map the data to a clean dictionary
-    document = {
-        "merchant_name": receipt_data.get("merchant_name"),
-        "date": receipt_data.get("date"),
-        "time": receipt_data.get("time"),
-        "total_amount": receipt_data.get("total_amount"),
-        "currency": receipt_data.get("currency"),
-        "items": receipt_data.get("items", []),
-        "drive_link": receipt_data.get("drive_link"),  # <-- save Drive URL
-        # <-- save who sent it
-        "sender_name": receipt_data.get("sender_name"),
-        "status": "Pending",
-        "source": "WhatsApp OpenClaw",
-        "createdAt": datetime.now(timezone.utc),
-    }
-    # 3. Insert the document
-    result = collection.insert_one(document)
-    # 4. Close connection and return the new ID
+    result = collection.insert_one(batch_record)
     client.close()
     return str(result.inserted_id)
+
+def update_receipt_status_db(sender_name: str, status: str) -> str:
+    """
+    Updates the database status of the user's most recent receipt batch.
+    Valid statuses: 'Confirmed', 'Needs Checking'
+    """
+    client = MongoClient(MONGO_URI)
+    db = client[DB_NAME]
+    collection = db[COLLECTION_NAME]
+
+    latest = collection.find_one(
+        {"sender_name": sender_name}, sort=[("createdAt", pymongo.DESCENDING)]
+    )
+
+    if not latest:
+        client.close()
+        return f"Could not find any recent receipts for {sender_name} to update."
+
+    collection.update_one({"_id": latest["_id"]}, {"$set": {"status": status}})
+    client.close()
+
+    if status == "Confirmed":
+        return f"✅ Database record for recent batch marked as *Confirmed*."
+    else:
+        return f"⚠️ Database record for recent batch flagged for *Checking*."
