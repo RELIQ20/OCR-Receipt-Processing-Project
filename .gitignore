@@ -3,3 +3,12 @@ ai_flow/env/
 ai_flow/samples/
 ai_flow/.env
 __pycache__/
+node_modules
+node_modules/
+.next/
+
+.env
+.env.local
+.env.*
+
+client/.env.local

@@ -1,0 +1,14 @@
+.scroll-stack-scroller {
+  height: 100%;
+  overflow-y: auto;
+  position: relative;
+}
+
+.scroll-stack-inner {
+  padding-bottom: 200px; /* Space for the last card to scroll up */
+}
+
+.scroll-stack-card {
+  margin-bottom: 20px;
+  position: relative;
+}
