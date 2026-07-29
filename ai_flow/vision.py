@@ -49,8 +49,25 @@ def compress_for_drive(image_path: str) -> str:
     cv2.imwrite(output_path, img, [cv2.IMWRITE_JPEG_QUALITY, 70])
     return output_path
 
+def auto_rotate_receipt(image_path: str):
+    """If the receipt is horizontally oriented (wider than it is tall), rotate it to portrait."""
+    try:
+        img = cv2.imread(image_path)
+        if img is None: return
+        h, w = img.shape[:2]
+        
+        # Receipts are almost always tall. If width > height, it's sideways!
+        if w > h:
+            log("Horizontal orientation detected. Auto-rotating 90 degrees...")
+            rotated = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+            cv2.imwrite(image_path, rotated)
+    except Exception as e:
+        log(f"Auto-rotate failed: {e}")
+
 def extract_receipt_data(image_path: str) -> dict:
     """Sends the RAW image to the OCR model and safely parses the JSON."""
+    auto_rotate_receipt(image_path)
+    
     system_prompt = """You are an expert receipt OCR engine. Extract data into EXACT JSON. 
     - Return ONLY valid JSON, no explanations, no markdown formatting, no backticks.
     - For missing/illegible fields use null.
@@ -80,7 +97,7 @@ def extract_receipt_data(image_path: str) -> dict:
         ],
         options={
             "temperature": 0,
-            "num_ctx": 16384,
+            "num_ctx": 4096,
             "keep_alive": "30m",
         },
     )

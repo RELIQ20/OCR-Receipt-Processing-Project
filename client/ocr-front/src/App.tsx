@@ -1,8 +1,5 @@
-import { useEffect, useState } from "react";
-import AuthPage from "./AuthPage";
-import LandingPage from "./LandingPage";
-import LifeReceiptDashboard from "../pages/DashboardScheme";
-import { fetchSession, logout, type PublicUser } from "./lib/auth-client";
+import IdleTimeoutModal from "./components/IdleTimeoutModal";
+import DashboardScheme from "../pages/DashboardScheme";
 
 export default function App() {
   const [user, setUser] = useState<PublicUser | null | undefined>(undefined);
@@ -35,10 +32,18 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] text-white">
-      <main className="flex-1 overflow-y-auto">
-        <LifeReceiptDashboard onLogout={handleLogout} />
-      </main>
+    <div>
+      <IdleTimeoutModal />
+
+      <h1>Hello</h1>
+      <div className="flex h-screen bg-[#0a0a0a] text-white">
+        {/* Sidebar - Updated to match image_dc0f83.png */}
+
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-y-auto">
+          <DashboardScheme />
+        </main>
+      </div>
     </div>
   );
 }
