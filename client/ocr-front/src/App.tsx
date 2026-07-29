@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import AuthPage from "./AuthPage";
-import LandingPage from "./LandingPage";
 import LifeReceiptDashboard from "../pages/DashboardScheme";
 import { fetchSession, logout, type PublicUser } from "./lib/auth-client";
 
@@ -9,9 +8,22 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
 
   useEffect(() => {
-    fetchSession()
-      .then(setUser)
-      .catch(() => setUser(null));
+    let cancelled = false;
+
+    const loadSession = async () => {
+      try {
+        const account = await fetchSession();
+        if (!cancelled) setUser(account ?? null);
+      } catch {
+        if (!cancelled) setUser(null);
+      }
+    };
+
+    loadSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -20,7 +32,10 @@ export default function App() {
     setShowAuth(false);
   };
 
-  if (user === undefined) return null;
+  if (user === undefined) {
+    return null; // still resolving session
+  }
+
   if (!user) {
     return showAuth ? (
       <AuthPage
@@ -34,11 +49,5 @@ export default function App() {
     );
   }
 
-  return (
-    <div className="flex h-screen bg-[#0a0a0a] text-white">
-      <main className="flex-1 overflow-y-auto">
-        <LifeReceiptDashboard onLogout={handleLogout} />
-      </main>
-    </div>
-  );
+  return <LifeReceiptDashboard user={user} onLogout={handleLogout} />;
 }

@@ -1,33 +1,35 @@
-import { useState, type FormEvent, type InputHTMLAttributes } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, User, Eye, EyeOff, Loader2, ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
-import { CardStack } from "../pages/CardStack";
-import { signup, login, AuthError, type PublicUser } from "./lib/auth-client";
+const container = document.getElementById('container');
+const showRegister = document.getElementById('showRegister');
+const showLogin = document.getElementById('showLogin');
+const loginForm = document.getElementById('loginForm');
+const registerForm = document.getElementById('registerForm');
 
-const t = {
-  pageBg: "#FBFBF9",
-  panelBg: "#003B28",
-  panelBgDeep: "#04160F",
-  surface: "#FFFFFF",
-  surfaceAlt: "#F1F6F3",
-  text: "#0F241B",
-  textMuted: "#5C6B65",
-  onPanel: "#F5EEDB",
-  onPanelMuted: "rgba(245,238,219,0.6)",
-  green: "#00563B",
-  accent: "#F4C430",
-  accentInk: "#3A2A00",
-  border: "rgba(0,86,59,0.12)",
-  danger: "#B3261E",
-  paper: "#F5EEDB",
-};
+showRegister.addEventListener('click', () => {
+  container.classList.add('active');
+});
 
-type Mode = "login" | "signup";
+showLogin.addEventListener('click', () => {
+  container.classList.remove('active');
+});
 
-interface FieldErrors {
-  [key: string]: string | undefined;
-}
+// Prevent actual submission — this is a front-end demo only.
+loginForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const btn = loginForm.querySelector('.btn-primary');
+  const original = btn.textContent;
+  btn.textContent = 'Signing in…';
+  setTimeout(() => { btn.textContent = original; }, 1200);
+});
 
+<<<<<<< HEAD
+registerForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const btn = registerForm.querySelector('.btn-primary');
+  const original = btn.textContent;
+  btn.textContent = 'Creating account…';
+  setTimeout(() => { btn.textContent = original; }, 1200);
+});
+=======
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const ERROR_COPY: Record<string, string> = {
@@ -387,3 +389,4 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
     </div>
   );
 }
+>>>>>>> origin/fixedstuff
