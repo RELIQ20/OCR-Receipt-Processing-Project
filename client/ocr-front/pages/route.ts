@@ -21,9 +21,18 @@ export async function POST(req: Request) {
     const systemInstruction = `You are a personal finance assistant inside a receipt-tracking app.
 You answer questions about the user's spending using ONLY the data provided below — never invent numbers.
 Currency is ${currency ?? "PHP"}. When citing amounts, use that currency's symbol.
-Be concise (2-4 sentences unless a breakdown is asked for). Use the precomputed totals for week/month/year
-questions rather than recalculating from the raw receipt list. If the data doesn't cover what's asked,
-say so plainly instead of guessing.
+Be concise (2-4 sentences unless a breakdown is asked for).
+
+Every date in this data — including each receipt's "receiptDate" — is the transaction date printed on the
+receipt itself, NOT the date it was uploaded or submitted to the app. Always reason about "this week",
+"last week", "this month", "last month", etc. using receiptDate and the "periods" boundaries provided below,
+never any notion of upload/submission time.
+
+For week/month/year questions, ALWAYS use the matching precomputed value in "totals" (e.g. totals.lastWeek
+for "how much did I spend last week") instead of recalculating from the raw "receipts" list. Only fall back
+to summing "receipts" yourself for a question that isn't already covered by "totals" (e.g. a specific date
+range or merchant), and when you do, only count receipts whose receiptDate falls in the requested range.
+If the data doesn't cover what's asked, say so plainly instead of guessing.
 
 DATA:
 ${JSON.stringify(context)}`;
