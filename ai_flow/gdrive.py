@@ -46,6 +46,17 @@ def _upload(file_path: str, file_name: str, mimetype: str) -> str:
         .create(body=metadata, media_body=media, fields="id, webViewLink")
         .execute()
     )
+
+    # Make the uploaded image accessible to anyone with the link.
+    try:
+        service.permissions().create(
+            fileId=file["id"],
+            body={"type": "anyone", "role": "reader"},
+        ).execute()
+    except Exception:
+        # If permission creation fails, fall back to the original link.
+        pass
+
     return file.get("webViewLink")
 
 def upload_image_to_drive(image_path: str) -> str:

@@ -6,7 +6,7 @@ export interface ReceiptItemPayload {
 export interface ReceiptEntryPayload {
   merchant_name: string;
   date: string;
-  time: string;
+  time?: string;
   total_amount: number;
   currency: string;
   drive_link?: string;

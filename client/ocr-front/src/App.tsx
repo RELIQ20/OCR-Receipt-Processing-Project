@@ -2,6 +2,35 @@ import IdleTimeoutModal from "./components/IdleTimeoutModal";
 import DashboardScheme from "../pages/DashboardScheme";
 
 export default function App() {
+  const [user, setUser] = useState<PublicUser | null | undefined>(undefined);
+  const [showAuth, setShowAuth] = useState(false);
+
+  useEffect(() => {
+    fetchSession()
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
+
+  const handleLogout = async () => {
+    await logout().catch(() => undefined);
+    setUser(null);
+    setShowAuth(false);
+  };
+
+  if (user === undefined) return null;
+  if (!user) {
+    return showAuth ? (
+      <AuthPage
+        onAuthSuccess={(account) => {
+          setUser(account);
+          setShowAuth(false);
+        }}
+      />
+    ) : (
+      <LandingPage onLogin={() => setShowAuth(true)} />
+    );
+  }
+
   return (
     <div>
       <IdleTimeoutModal />
