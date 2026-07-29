@@ -118,7 +118,7 @@ def process_receipt(image_path: str, sender_name: str = "User") -> str:
 
     batch_mongo_record = {
         "sender_name": sender_name,
-        "status": "Confirmed",
+        "status": "processing",
         "source": "WhatsApp OpenClaw",
         "createdAt": datetime.now(timezone.utc),
         "receipts": [],
