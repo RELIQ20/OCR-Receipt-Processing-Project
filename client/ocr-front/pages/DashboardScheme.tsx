@@ -16,7 +16,6 @@ import {
   Check,
   X,
   FileText,
-  Receipt as ReceiptIcon,
   PanelLeftClose,
   PanelLeftOpen,
   Loader2,
@@ -29,15 +28,15 @@ import {
   ExternalLink,
   Plus,
   Users,
+  LogOut,
 } from "lucide-react";
 import { CardCarousel, type CarouselCard } from "./CardCarousel";
 import { ChatAssistant } from "./ChatAssistant";
 import {
-  createReceipt as createReceiptApi,
+
   deleteReceipt as deleteReceiptApi,
   fetchReceipts as fetchReceiptsApi,
   updateReceipt as updateReceiptApi,
-  type ReceiptMessagePayload,
 } from "../src/lib/api";
 import { buildSpendingContext } from "./spendingContext";
 
@@ -310,6 +309,80 @@ function smoothPath(points: { x: number; y: number }[]) {
     d += ` C ${midX} ${p0.y}, ${midX} ${p1.y}, ${p1.x} ${p1.y}`;
   }
   return d;
+}
+
+function resolvePhotoSrcCandidates(link?: string) {
+  if (!link) return [];
+
+  const fileIdFromLink = (candidate: string) => {
+    const match = candidate.match(/(?:\/file\/d\/|\/open\?id=|id=)([A-Za-z0-9_-]+)/);
+    if (match?.[1]) return match[1];
+    const directMatch = candidate.match(/\/uc\?export=download&id=([A-Za-z0-9_-]+)/);
+    if (directMatch?.[1]) return directMatch[1];
+    const docsMatch = candidate.match(/\/document\/d\/([A-Za-z0-9_-]+)/);
+    if (docsMatch?.[1]) return docsMatch[1];
+    return null;
+  };
+
+  const candidates: string[] = [];
+  const id = fileIdFromLink(link);
+
+  if (id) {
+    candidates.push(`https://drive.google.com/uc?export=view&id=${id}`);
+    candidates.push(`https://drive.google.com/uc?export=download&id=${id}`);
+    candidates.push(`https://drive.google.com/thumbnail?id=${id}`);
+  }
+
+  try {
+    const url = new URL(link);
+    if (/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(url.pathname)) {
+      candidates.push(link);
+    }
+  } catch {
+    if (/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(link)) {
+      candidates.push(link);
+    }
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+function ReceiptPhotoPreview({ link, merchant, t }: { link?: string; merchant: string; t: ThemeTokens }) {
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  if (!link) return null;
+
+  const previewOptions = resolvePhotoSrcCandidates(link);
+  const currentSrc = previewOptions[previewIndex];
+
+  return (
+    <div className="pt-2 space-y-2">
+      <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: t.green }}>
+        <ExternalLink size={12} /> View original photo
+      </a>
+      {!previewFailed && currentSrc && (
+        <img
+          src={currentSrc}
+          alt={`${merchant} receipt`}
+          loading="lazy"
+          className="w-full max-h-80 rounded-xl border object-contain"
+          style={{ borderColor: t.border, background: t.surfaceAlt }}
+          onError={() => {
+            if (previewIndex + 1 < previewOptions.length) {
+              setPreviewIndex((index) => index + 1);
+            } else {
+              setPreviewFailed(true);
+            }
+          }}
+        />
+      )}
+      {previewFailed && (
+        <p className="text-[11px]" style={{ color: t.textMuted }}>
+          Preview unavailable. Open the original photo link to view it.
+        </p>
+      )}
+    </div>
+  );
 }
 
 /** Exports every merchant receipt + line item inside one WhatsApp submission as a CSV. */
@@ -1094,11 +1167,7 @@ function ReceiptInboxView({
                       ))}
                     </div>
                   )}
-                  {r.drive_link && (
-                    <a href={r.drive_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold pt-1" style={{ color: t.green }}>
-                      <ExternalLink size={12} /> View original photo
-                    </a>
-                  )}
+                  {r.drive_link && <ReceiptPhotoPreview link={r.drive_link} merchant={r.merchant_name} t={t} />}
                 </div>
               ))}
             </div>
@@ -1140,7 +1209,7 @@ function ReceiptInboxView({
    MAIN DASHBOARD — default export, owns all app state
    ========================================================================= */
 
-export default function LifeReceiptDashboard() {
+export default function LifeReceiptDashboard({ onLogout }: { onLogout: () => Promise<void> | void }) {
   const [mode, setMode] = useState<Mode>("light");
   const t = THEME[mode];
 
@@ -1326,6 +1395,15 @@ export default function LifeReceiptDashboard() {
         <NavPill view={view} setView={setView} t={t} />
 
         <div className="w-56 flex justify-end items-center gap-3">
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-colors"
+            style={{ color: t.onBar, borderColor: "rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.08)" }}
+            title="Log out"
+          >
+            <LogOut size={14} />
+            Logout
+          </button>
           <button
             onClick={() => setMode((m) => (m === "light" ? "dark" : "light"))}
             className="relative flex items-center w-14 h-8 rounded-full px-1 transition-colors duration-500"
