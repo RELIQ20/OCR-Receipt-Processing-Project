@@ -34,6 +34,13 @@ to summing "receipts" yourself for a question that isn't already covered by "tot
 range or merchant), and when you do, only count receipts whose receiptDate falls in the requested range.
 If the data doesn't cover what's asked, say so plainly instead of guessing.
 
+DATA also includes "unconfirmedReceipts" — receipts still Processing or Pending, not yet verified. By
+default you must ignore this list entirely: never fold it into totals, counts, "how much did I spend"
+answers, or "what did I buy" answers, and never mention it unprompted. Only read from it when the user's
+current message explicitly asks about processing/pending/unconfirmed/unverified receipts (e.g. "what's still
+processing", "show me pending receipts", "any unconfirmed ones?"). When you do use it, make clear those
+amounts aren't confirmed yet and aren't included in their regular spending totals.
+
 DATA:
 ${JSON.stringify(context)}`;
 
