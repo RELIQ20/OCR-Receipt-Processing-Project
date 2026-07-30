@@ -169,7 +169,7 @@ interface FlatRow {
 }
 
 type DateRange = "weekly" | "monthly" | "yearly";
-type View = "dashboard" | "inbox";
+type View = "dashboard" | "inbox-processing" | "inbox-completed";
 
 /* ============================================================================
    HELPERS
@@ -370,7 +370,7 @@ function resolvePhotoSrcCandidates(link?: string) {
   if (id) {
     candidates.push(`https://drive.google.com/uc?export=view&id=${id}`);
     candidates.push(`https://drive.google.com/uc?export=download&id=${id}`);
-    candidates.push(`https://drive.google.com/thumbnail?id=${id}`);
+    candidates.push(`https://drive.google.com/thumbnail?id=${id}&sz=w3000-h3000`);
   }
 
   try {
@@ -390,37 +390,62 @@ function resolvePhotoSrcCandidates(link?: string) {
 function ReceiptPhotoPreview({ link, merchant, t }: { link?: string; merchant: string; t: ThemeTokens }) {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [zoomOrigin, setZoomOrigin] = useState("50% 50%");
+
   if (!link) return null;
 
   const previewOptions = resolvePhotoSrcCandidates(link);
   const currentSrc = previewOptions[previewIndex];
 
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isZoomed) return;
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - left) / width) * 100;
+    const y = ((e.clientY - top) / height) * 100;
+    setZoomOrigin(`${x}% ${y}%`);
+  };
+
   return (
-    <div className="pt-2 space-y-2">
-      <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: t.green }}>
-        <ExternalLink size={12} /> View original photo
-      </a>
-      {!previewFailed && currentSrc && (
-        <img
-          src={currentSrc}
-          alt={`${merchant} receipt`}
-          loading="lazy"
-          className="w-full max-h-80 rounded-xl border object-contain"
-          style={{ borderColor: t.border, background: t.surfaceAlt }}
-          onError={() => {
-            if (previewIndex + 1 < previewOptions.length) {
-              setPreviewIndex((index) => index + 1);
-            } else {
-              setPreviewFailed(true);
-            }
-          }}
-        />
-      )}
-      {previewFailed && (
-        <p className="text-[11px]" style={{ color: t.textMuted }}>
-          Preview unavailable. Open the original photo link to view it.
-        </p>
-      )}
+    <div className="w-full h-full flex items-start justify-center pt-4">
+      <div 
+        className="relative group inline-flex overflow-hidden"
+        onMouseMove={handleMouseMove}
+        onClick={() => setIsZoomed(!isZoomed)}
+        onMouseLeave={() => setIsZoomed(false)}
+        style={{ cursor: isZoomed ? 'zoom-out' : 'zoom-in', maxHeight: '100%', maxWidth: '100%' }}
+      >
+        {!isZoomed && !previewFailed && (
+          <div className="absolute top-4 right-4 bg-black/60 text-white px-3 py-1.5 rounded-full text-xs font-bold pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md">
+            Click to zoom
+          </div>
+        )}
+        {!previewFailed && currentSrc && (
+          <img
+            src={currentSrc}
+            alt={`${merchant} receipt`}
+            loading="lazy"
+            className="max-h-full max-w-full object-contain transition-transform duration-200"
+            style={{ 
+              transform: isZoomed ? 'scale(2.5)' : 'scale(1)',
+              transformOrigin: zoomOrigin
+            }}
+            onError={() => {
+              if (previewIndex + 1 < previewOptions.length) {
+                setPreviewIndex((index) => index + 1);
+              } else {
+                setPreviewFailed(true);
+              }
+            }}
+          />
+        )}
+        {previewFailed && (
+          <div className="flex flex-col items-center justify-center gap-2 p-6 text-center w-64 h-64 bg-black/5">
+            <p className="text-sm opacity-50">High quality preview unavailable.</p>
+            <a href={link} target="_blank" rel="noreferrer" className="text-xs font-bold underline">Open in Drive</a>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -478,12 +503,12 @@ function StatusBadge({ status, t }: { status: string; t: ThemeTokens }) {
 function NavPill({ view, setView, t }: { view: View; setView: (v: View) => void; t: ThemeTokens }) {
   const TABS: { key: View; label: string; icon: any }[] = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { key: "inbox", label: "Receipt Inbox", icon: InboxIcon },
+    { key: "inbox-processing", label: "Receipt Inbox", icon: InboxIcon },
   ];
   return (
     <div className="flex items-center gap-1 rounded-full p-1 backdrop-blur-md border" style={{ background: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.18)" }}>
       {TABS.map(({ key, label, icon: Icon }) => {
-        const active = view === key;
+        const active = key.startsWith("inbox") ? view.startsWith("inbox") : view === key;
         return (
           <button
             key={key}
@@ -503,97 +528,68 @@ function NavPill({ view, setView, t }: { view: View; setView: (v: View) => void;
   );
 }
 
-function NotificationBell({
+function ToastContainer({
   t,
   notifications,
   onMarkRead,
-  onMarkAllRead,
   onOpenReceipt,
-  iconColor,
-  bg,
 }: {
   t: ThemeTokens;
   notifications: AppNotification[];
   onMarkRead: (id: string) => void;
-  onMarkAllRead: () => void;
   onOpenReceipt: (id: string) => void;
-  iconColor?: string;
-  bg?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const unread = notifications.filter((n) => !n.read).length;
+  const unread = notifications.filter((n) => !n.read);
+
+  if (unread.length === 0) return null;
 
   return (
-    <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className="relative flex items-center justify-center w-10 h-10 rounded-full transition-colors hover:bg-black/5 shadow-sm" style={{ background: bg || "rgba(255,255,255,0.1)" }}>
-        <Bell size={18} color={iconColor || t.onBar} />
-        {unread > 0 && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center" style={{ background: t.accent, color: t.accentInk }}>
-            {unread}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="absolute right-0 top-11 w-80 rounded-2xl shadow-2xl p-2 z-[100] border"
-            style={{ background: t.surface, borderColor: t.border }}
-          >
-            <div className="flex items-center justify-between px-2 py-1.5">
-              <p className="text-xs font-bold" style={{ color: t.text }}>
-                Notifications
-              </p>
-              <div className="flex items-center gap-3">
-                <button onClick={onMarkAllRead} className="text-[11px]" style={{ color: t.textMuted }}>
-                  Mark all read
-                </button>
-                <button onClick={() => setOpen(false)}>
-                  <X size={13} color={t.textMuted} />
-                </button>
+    <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 w-80 pointer-events-none">
+      <AnimatePresence>
+        {unread.map((n) => {
+          const Icon = NOTIF_ICONS[n.type];
+          return (
+            <motion.div
+              key={n.id}
+              initial={{ opacity: 0, x: 20, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.95 }}
+              className="w-full flex items-start gap-3 p-4 rounded-2xl shadow-xl border pointer-events-auto"
+              style={{ background: t.surface, borderColor: t.border }}
+            >
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1" style={{ background: t.accent, color: t.accentInk }}>
+                <Icon size={14} />
               </div>
-            </div>
-            <div className="space-y-1 max-h-72 overflow-y-auto">
-              {notifications.length === 0 && (
-                <p className="text-xs px-2 py-6 text-center" style={{ color: t.textMuted }}>
-                  You&apos;re all caught up.
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold truncate" style={{ color: t.text }}>
+                  {n.title}
                 </p>
-              )}
-              {notifications.map((n) => {
-                const Icon = NOTIF_ICONS[n.type];
-                return (
-                  <button
-                    key={n.id}
-                    onClick={() => {
-                      onMarkRead(n.id);
-                      if (n.receiptId) onOpenReceipt(n.receiptId);
-                      setOpen(false);
-                    }}
-                    className="w-full flex items-start gap-2 px-2 py-2 rounded-xl text-left"
-                    style={{ background: t.surfaceAlt }}
+                <p className="text-xs mt-1 leading-snug" style={{ color: t.textMuted }}>
+                  {n.detail}
+                </p>
+                <div className="flex gap-2 mt-3">
+                  {n.receiptId && (
+                    <button 
+                      onClick={() => { onMarkRead(n.id); onOpenReceipt(n.receiptId!); }} 
+                      className="text-[10px] uppercase font-bold px-3 py-1.5 rounded-full transition-opacity hover:opacity-80"
+                      style={{ background: t.accent, color: t.accentInk }}
+                    >
+                      View
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => onMarkRead(n.id)} 
+                    className="text-[10px] uppercase font-bold px-3 py-1.5 rounded-full transition-opacity hover:opacity-80"
+                    style={{ background: t.surfaceAlt, color: t.text }}
                   >
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: t.accent, color: t.accentInk }}>
-                      <Icon size={13} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium truncate" style={{ color: n.read ? t.textMuted : t.text }}>
-                        {n.title}
-                      </p>
-                      <p className="text-[10px] truncate" style={{ color: t.textMuted }}>
-                        {n.detail}
-                      </p>
-                    </div>
-                    {!n.read && <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1 ml-auto" style={{ background: t.accent }} />}
+                    Dismiss
                   </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        </>
-      )}
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 }
@@ -871,216 +867,6 @@ function StatusDropdown({ t, value, onChange }: { t: ThemeTokens; value: string;
    the receipts below rather than typed directly, so it can't drift.
    ========================================================================= */
 
-function EditReceiptModal({ message, t, onClose, onSave }: { message: ReceiptMessage; t: ThemeTokens; onClose: () => void; onSave: (updates: Partial<ReceiptMessage>) => void }) {
-  const [draft, setDraft] = useState<ReceiptMessage>(() => JSON.parse(JSON.stringify(message)));
-
-  const computedGrandTotal = draft.receipts.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0);
-
-  const updateReceiptField = (index: number, field: keyof ReceiptEntry, value: any) => {
-    setDraft((d) => {
-      const receipts = d.receipts.slice();
-      receipts[index] = { ...receipts[index], [field]: value };
-      return { ...d, receipts };
-    });
-  };
-
-  const updateItemField = (rIndex: number, iIndex: number, field: keyof ReceiptItem, value: any) => {
-    setDraft((d) => {
-      const receipts = d.receipts.slice();
-      const items = receipts[rIndex].items.slice();
-      items[iIndex] = { ...items[iIndex], [field]: value };
-      receipts[rIndex] = { ...receipts[rIndex], items };
-      return { ...d, receipts };
-    });
-  };
-
-  const addItem = (rIndex: number) => {
-    setDraft((d) => {
-      const receipts = d.receipts.slice();
-      receipts[rIndex] = { ...receipts[rIndex], items: [...receipts[rIndex].items, { description: "", price: 0 }] };
-      return { ...d, receipts };
-    });
-  };
-
-  const removeItem = (rIndex: number, iIndex: number) => {
-    setDraft((d) => {
-      const receipts = d.receipts.slice();
-      receipts[rIndex] = { ...receipts[rIndex], items: receipts[rIndex].items.filter((_, i) => i !== iIndex) };
-      return { ...d, receipts };
-    });
-  };
-
-  const addReceipt = () => {
-    setDraft((d) => ({
-      ...d,
-      receipts: [...d.receipts, { merchant_name: "", date: new Date().toISOString().slice(0, 10), time: "", total_amount: 0, currency: "PHP", items: [] }],
-    }));
-  };
-
-  const removeReceipt = (rIndex: number) => {
-    setDraft((d) => ({ ...d, receipts: d.receipts.filter((_, i) => i !== rIndex) }));
-  };
-
-  const handleSave = () => {
-    onSave({ sender_name: draft.sender_name, status: draft.status, receipts: draft.receipts, excel_link: draft.excel_link });
-    onClose();
-  };
-
-  const inputStyle = { background: t.surfaceAlt, color: t.text, borderColor: t.border } as const;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.97 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl shadow-2xl p-6 space-y-5"
-        style={{ background: t.surface }}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold" style={{ color: t.text }}>
-            Edit receipt
-          </h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: t.surfaceAlt }}>
-            <X size={15} color={t.textMuted} />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-[10px] uppercase tracking-wider" style={{ color: t.textMuted }}>
-              Sender
-            </label>
-            <input
-              value={draft.sender_name}
-              onChange={(e) => setDraft((d) => ({ ...d, sender_name: e.target.value }))}
-              className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none border"
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label className="text-[10px] uppercase tracking-wider" style={{ color: t.textMuted }}>
-              Status
-            </label>
-            <select
-              value={draft.status}
-              onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}
-              className="w-full mt-1 rounded-lg px-3 py-2 text-sm outline-none border"
-              style={inputStyle}
-            >
-              {(STATUS_OPTIONS.includes(draft.status) ? STATUS_OPTIONS : [...STATUS_OPTIONS, draft.status]).map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          {draft.receipts.map((r, rIndex) => (
-            <div key={rIndex} className="rounded-xl p-4 space-y-3 border" style={{ background: t.surfaceAlt, borderColor: t.border }}>
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold" style={{ color: t.textMuted }}>
-                  Receipt {rIndex + 1}
-                </p>
-                <button onClick={() => removeReceipt(rIndex)} title="Remove this receipt">
-                  <Trash2 size={14} color={t.danger} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  value={r.merchant_name}
-                  onChange={(e) => updateReceiptField(rIndex, "merchant_name", e.target.value)}
-                  placeholder="Merchant name"
-                  className="rounded-lg px-3 py-2 text-sm outline-none border"
-                  style={{ background: t.surface, color: t.text, borderColor: t.border }}
-                />
-                <div className="flex items-center gap-2">
-                  <input
-                    value={r.currency}
-                    onChange={(e) => updateReceiptField(rIndex, "currency", e.target.value)}
-                    placeholder="Currency"
-                    className="w-20 rounded-lg px-3 py-2 text-sm outline-none border"
-                    style={{ background: t.surface, color: t.text, borderColor: t.border }}
-                  />
-                  <input
-                    type="number"
-                    value={r.total_amount}
-                    onChange={(e) => updateReceiptField(rIndex, "total_amount", Number(e.target.value))}
-                    placeholder="Total"
-                    className="flex-1 rounded-lg px-3 py-2 text-sm outline-none border"
-                    style={{ background: t.surface, color: t.text, borderColor: t.border }}
-                  />
-                </div>
-                <input
-                  type="date"
-                  value={r.date}
-                  onChange={(e) => updateReceiptField(rIndex, "date", e.target.value)}
-                  className="rounded-lg px-3 py-2 text-sm outline-none border"
-                  style={{ background: t.surface, color: t.text, borderColor: t.border }}
-                />
-                <input
-                  type="time"
-                  value={r.time ?? ""}
-                  onChange={(e) => updateReceiptField(rIndex, "time", e.target.value)}
-                  className="rounded-lg px-3 py-2 text-sm outline-none border"
-                  style={{ background: t.surface, color: t.text, borderColor: t.border }}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                {r.items.map((it, iIndex) => (
-                  <div key={iIndex} className="flex items-center gap-2">
-                    <input
-                      value={it.description}
-                      onChange={(e) => updateItemField(rIndex, iIndex, "description", e.target.value)}
-                      placeholder="Item description"
-                      className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none border"
-                      style={{ background: t.surface, color: t.text, borderColor: t.border }}
-                    />
-                    <input
-                      type="number"
-                      value={it.price}
-                      onChange={(e) => updateItemField(rIndex, iIndex, "price", Number(e.target.value))}
-                      className="w-24 rounded-lg px-2.5 py-1.5 text-xs outline-none border"
-                      style={{ background: t.surface, color: t.text, borderColor: t.border }}
-                    />
-                    <button onClick={() => removeItem(rIndex, iIndex)} title="Remove item">
-                      <Trash2 size={13} color={t.danger} />
-                    </button>
-                  </div>
-                ))}
-                <button onClick={() => addItem(rIndex)} className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: t.green }}>
-                  <Plus size={12} /> Add item
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <button onClick={addReceipt} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl" style={{ background: t.surfaceAlt, color: t.text }}>
-            <Plus size={13} /> Add another receipt to this message
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t text-sm font-bold" style={{ borderColor: t.border, color: t.text }}>
-          <span>Grand total (auto-calculated)</span>
-          <span className="font-mono">{formatAmount(computedGrandTotal, draft.receipts[0]?.currency)}</span>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: t.textMuted }}>
-            Cancel
-          </button>
-          <button onClick={handleSave} className="px-5 py-2.5 rounded-xl text-sm font-semibold" style={{ background: t.green, color: "#fff" }}>
-            Save changes
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
 /* ============================================================================
    RECEIPT INBOX — email-style layout: collapsible white list + detail panel.
    ========================================================================= */
@@ -1094,6 +880,7 @@ function ReceiptInboxView({
   onSaveEdit,
   query,
   setQuery,
+  filterStatus,
 }: {
   t: ThemeTokens;
   receipts: ReceiptMessage[];
@@ -1103,134 +890,428 @@ function ReceiptInboxView({
   onSaveEdit: (id: string, updates: Partial<ReceiptMessage>) => void;
   query: string;
   setQuery: (q: string) => void;
+  filterStatus: "processing" | "completed";
 }) {
   const [listOpen, setListOpen] = useState(true);
-  const [filter, setFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(receipts[0]?.id ?? null);
-  const [editing, setEditing] = useState(false);
+  const [isEditing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<ReceiptMessage | null>(null);
 
   useEffect(() => {
     if (focusId) setSelectedId(focusId);
   }, [focusId]);
 
+  useEffect(() => {
+    setSelectedId(null);
+  }, [filterStatus]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return receipts
-      .filter((m) => (filter === "all" ? true : m.status.trim().toLowerCase() === filter))
+      .filter((m) => {
+        const status = m.status.trim().toLowerCase();
+        if (filterStatus === "completed") return status === "confirmed";
+        return status === "processing" || status === "pending"; // pending included for older records
+      })
       .filter((m) => (q ? [m.sender_name, m.status, ...m.receipts.map((r) => r.merchant_name)].join(" ").toLowerCase().includes(q) : true));
-  }, [receipts, filter, query]);
+  }, [receipts, filterStatus, query]);
 
-  const selected = receipts.find((m) => m.id === selectedId) ?? filtered[0] ?? null;
+  const selected = receipts.find((m) => m.id === selectedId) ?? (filterStatus === "processing" ? filtered[0] : null);
 
-  const counts: Record<string, number> = { all: receipts.length };
-  STATUS_FILTERS.slice(1).forEach((f) => {
-    counts[f.key] = receipts.filter((m) => m.status.trim().toLowerCase() === f.key).length;
-  });
+  const startEdit = () => {
+    if (selected) {
+      setDraft(JSON.parse(JSON.stringify(selected)));
+      setEditing(true);
+    }
+  };
+
+  const cancelEdit = () => {
+    setDraft(null);
+    setEditing(false);
+  };
+
+  const saveEdit = () => {
+    if (draft) {
+      onSaveEdit(draft.id, draft);
+      setDraft(null);
+      setEditing(false);
+    }
+  };
+
+  const updateDraftReceipt = (rIndex: number, field: string, value: any) => {
+    if (!draft) return;
+    const newDraft = { ...draft };
+    newDraft.receipts[rIndex] = { ...newDraft.receipts[rIndex], [field]: value };
+    newDraft.grand_total = newDraft.receipts.reduce((sum, r) => sum + Number(r.total_amount), 0);
+    setDraft(newDraft);
+  };
+
+  const updateDraftItem = (rIndex: number, iIndex: number, field: string, value: any) => {
+    if (!draft) return;
+    const newDraft = { ...draft };
+    const items = [...newDraft.receipts[rIndex].items];
+    items[iIndex] = { ...items[iIndex], [field]: value };
+    newDraft.receipts[rIndex].items = items;
+    
+    newDraft.receipts[rIndex].total_amount = items.reduce((sum, it) => sum + (Number(it.price) || 0), 0);
+    newDraft.grand_total = newDraft.receipts.reduce((sum, r) => sum + Number(r.total_amount), 0);
+    setDraft(newDraft);
+  };
+
+  const addDraftItem = (rIndex: number) => {
+    if (!draft) return;
+    const newDraft = { ...draft };
+    newDraft.receipts[rIndex].items.push({ description: "", price: 0 });
+    setDraft(newDraft);
+  };
+
+  const removeDraftItem = (rIndex: number, iIndex: number) => {
+    if (!draft) return;
+    const newDraft = { ...draft };
+    newDraft.receipts[rIndex].items.splice(iIndex, 1);
+    newDraft.receipts[rIndex].total_amount = newDraft.receipts[rIndex].items.reduce((sum, it) => sum + (Number(it.price) || 0), 0);
+    newDraft.grand_total = newDraft.receipts.reduce((sum, r) => sum + Number(r.total_amount), 0);
+    setDraft(newDraft);
+  };
+
+  const isCompletedView = filterStatus === "completed";
+  const listWidth = !listOpen 
+    ? 0 
+    : isCompletedView 
+      ? '100%' 
+      : 340;
+
+  const renderDetailContent = () => {
+    if (!selected) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <p className="text-sm" style={{ color: t.textMuted }}>
+            Select a receipt to view details.
+          </p>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="h-full flex flex-col p-4 lg:p-8">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <h2 className="text-3xl font-bold" style={{ color: t.text }}>
+              {selected.sender_name}
+            </h2>
+            <p className="text-sm mt-1 mb-3" style={{ color: t.textMuted }}>
+              {dateTime(selected.createdAt)} · via {selected.source}
+            </p>
+            <div className="flex items-center gap-2">
+              <StatusBadge status={selected.status} t={t} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isEditing ? (
+              <>
+                {selected.status !== 'Confirmed' && (
+                  <button onClick={() => onStatusChange(selected.id, "Confirmed")} className="flex items-center justify-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-sm transition-all" style={{ background: t.accent, color: '#ffffff' }}>
+                    <Check size={16} /> Mark as Complete
+                  </button>
+                )}
+                {!isCompletedView && (
+                  <>
+                    <button onClick={startEdit} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: t.surfaceAlt }} title="Edit receipt values">
+                      <Pencil size={16} color={t.text} />
+                    </button>
+                    <button onClick={() => onDelete(selected.id)} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: `${t.danger}1a` }} title="Delete this submission">
+                      <Trash2 size={16} color={t.danger} />
+                    </button>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <button onClick={saveEdit} className="flex items-center justify-center gap-2 px-5 py-2 rounded-full text-sm font-bold text-white shadow-sm" style={{ background: t.green }}>
+                  <Check size={16} />
+                  Save
+                </button>
+                <button onClick={cancelEdit} className="flex items-center justify-center gap-2 px-5 py-2 rounded-full text-sm font-bold text-white shadow-sm" style={{ background: t.danger }}>
+                  <X size={16} />
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Split Container */}
+        <div className="flex-1 rounded-2xl overflow-y-auto flex flex-col gap-6 p-2 lg:p-6" style={{ background: 'transparent' }}>
+          {(isEditing ? draft : selected)!.receipts.map((r, rIndex) => (
+            <div key={rIndex} className="flex flex-col min-h-0 gap-8 lg:flex-row items-start">
+              
+              {/* Left Column: Image Preview */}
+              <div className="w-full lg:w-1/2 lg:sticky lg:top-0 lg:h-[75vh] flex items-start justify-center">
+                {r.drive_link ? (
+                  <ReceiptPhotoPreview link={r.drive_link} merchant={r.merchant_name} t={t} />
+                ) : (
+                  <div className="text-sm opacity-50 flex items-center justify-center h-64 w-full bg-black/5 rounded-2xl">No image provided</div>
+                )}
+              </div>
+              
+              {/* Right Column: Physical Receipt Styled Data */}
+              <div className="w-full lg:w-1/2 flex justify-center py-4" style={{ filter: 'drop-shadow(0 20px 25px rgba(0,0,0,0.2)) drop-shadow(0 8px 10px rgba(0,0,0,0.1))' }}>
+                <div 
+                  className="w-full max-w-sm flex flex-col relative p-6 lg:p-8"
+                  style={{ 
+                    backgroundColor: '#fdfaf2',
+                    color: '#2a2a2a',
+                    fontFamily: '"Courier New", Courier, monospace'
+                  }}
+                >
+                  {/* Perforated top edge */}
+                  <div className="absolute top-0 left-0 right-0 h-2" style={{ 
+                    marginTop: '-8px',
+                    backgroundSize: '16px 8px', 
+                    backgroundImage: 'radial-gradient(circle at 50% 0, transparent 4px, #fdfaf2 5px)', 
+                  }}></div>
+
+                  <div className="relative z-20 flex flex-col">
+                    <div className="text-center mb-6 border-b-2 border-dashed border-gray-300 pb-6">
+                      {isEditing ? (
+                        <input 
+                          value={r.merchant_name} 
+                          onChange={(e) => updateDraftReceipt(rIndex, "merchant_name", e.target.value)} 
+                          className="font-bold text-xl rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50 w-full text-center mb-2" 
+                        />
+                      ) : (
+                        <h3 className="font-bold text-2xl uppercase tracking-wider mb-2 text-gray-800">
+                          {r.merchant_name}
+                        </h3>
+                      )}
+                      
+                      <div className="text-sm text-gray-500 font-mono flex items-center justify-center gap-2">
+                        {isEditing ? (
+                          <div className="flex gap-2 justify-center">
+                            <input type="date" value={r.date} onChange={(e) => updateDraftReceipt(rIndex, "date", e.target.value)} className="rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
+                            <input type="time" value={r.time ?? ''} onChange={(e) => updateDraftReceipt(rIndex, "time", e.target.value)} className="rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
+                          </div>
+                        ) : (
+                          <>{dateOnly(r.date)} {r.time ? `· ${r.time}` : ""}</>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 font-mono text-sm pb-4">
+                      {r.items.length > 0 && r.items.map((it, ii) => (
+                        <div key={ii} className="flex items-start justify-between gap-3">
+                          {isEditing ? (
+                            <>
+                              <input value={it.description} onChange={(e) => updateDraftItem(rIndex, ii, "description", e.target.value)} className="flex-1 rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
+                              <input type="number" value={it.price} onChange={(e) => updateDraftItem(rIndex, ii, "price", parseFloat(e.target.value))} className="w-20 rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50 text-right" />
+                              <button onClick={() => removeDraftItem(rIndex, ii)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="uppercase flex-1 pr-4" style={{ color: '#333' }}>{it.description}</span>
+                              <span className="font-semibold" style={{ color: '#000' }}>
+                                {formatAmount(it.price, r.currency)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                      {isEditing && (
+                        <button onClick={() => addDraftItem(rIndex)} className="text-xs font-bold mt-4 flex items-center gap-1 text-green-700 hover:bg-green-50 px-2 py-1 rounded"><Plus size={14}/> ADD ITEM</button>
+                      )}
+                    </div>
+                    
+                    <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-300">
+                       <div className="flex items-center justify-between font-bold text-lg text-gray-900">
+                         <span className="uppercase tracking-widest">Total</span>
+                         <span>{formatAmount((isEditing ? draft : selected)!.grand_total, (isEditing ? draft : selected)!.receipts[0]?.currency)}</span>
+                       </div>
+                    </div>
+                  </div>
+                  
+                  {/* Perforated bottom edge */}
+                  <div className="absolute bottom-0 left-0 right-0 h-2" style={{ 
+                    marginBottom: '-8px',
+                    backgroundSize: '16px 8px', 
+                    backgroundImage: 'radial-gradient(circle at 50% 100%, transparent 4px, #fdfaf2 5px)', 
+                  }}></div>
+                  
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="relative flex flex-1 overflow-hidden gap-5 p-5" style={{ background: `linear-gradient(160deg, ${t.barBg} 0%, ${t.greenDeep} 100%)` }}>
-      {editing && selected && (
-        <EditReceiptModal
-          message={selected}
-          t={t}
-          onClose={() => setEditing(false)}
-          onSave={(updates) => onSaveEdit(selected.id, updates)}
-        />
-      )}
-
-      {/* LIST — white "email" box, collapsible */}
+    <div className="relative flex flex-1 overflow-hidden gap-5" style={{ background: "transparent" }}>
+      {/* LIST OR TABLE */}
       <div
-        className="flex-shrink-0 flex flex-col rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden transition-all duration-300 ease-in-out"
+        className="flex-shrink-0 flex flex-col rounded-[24px] shadow-sm overflow-hidden transition-all duration-300 ease-in-out"
         style={{
           background: t.surface,
-          width: listOpen ? 380 : 0,
+          width: listWidth,
           opacity: listOpen ? 1 : 0,
           marginRight: listOpen ? 0 : -20,
           pointerEvents: listOpen ? "auto" : "none",
         }}
       >
-        <div className="p-4 space-y-3 border-b" style={{ borderColor: t.border }}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: t.green }}>
-                <InboxIcon size={14} color="#FFFFFF" />
+        {isCompletedView ? (
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="p-5 border-b shrink-0 flex flex-wrap items-center justify-between gap-4" style={{ borderColor: t.border }}>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setListOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:opacity-80" style={{ background: `${t.accent}1a`, color: t.accent }}>
+                  <ArrowLeft size={16} />
+                </button>
+                <h3 className="font-bold text-lg" style={{ color: t.text }}>Completed Records</h3>
+                <span className="text-xs px-2 py-1 rounded-full font-bold" style={{ background: t.surfaceAlt, color: t.textMuted }}>{filtered.length}</span>
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold truncate" style={{ color: t.text }}>
-                  Receipt Inbox
-                </p>
-                <p className="text-[10px]" style={{ color: t.textMuted }}>
-                  {receipts.length} submissions
-                </p>
+              <div className="relative w-64 max-w-full">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 opacity-40" color={t.text} />
+                <input
+                  type="text"
+                  placeholder="Search sender or merchant..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm rounded-xl outline-none"
+                  style={{ background: t.surfaceAlt, color: t.text }}
+                />
               </div>
             </div>
-            <button onClick={() => setListOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: t.surfaceAlt }} title="Hide inbox list">
-              <ArrowLeft size={15} color={t.textMuted} />
-            </button>
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead className="sticky top-0 z-10 shadow-sm" style={{ background: '#f8f6f0' }}>
+                  <tr>
+                    <th className="font-bold text-[10px] uppercase tracking-wider px-6 py-4 border-b text-gray-400" style={{ borderColor: t.border }}>NO.</th>
+                    <th className="font-bold text-[10px] uppercase tracking-wider px-6 py-4 border-b text-gray-400" style={{ borderColor: t.border }}>Sender Name</th>
+                    <th className="font-bold text-[10px] uppercase tracking-wider px-6 py-4 border-b text-gray-400" style={{ borderColor: t.border }}>Date</th>
+                    <th className="font-bold text-[10px] uppercase tracking-wider px-6 py-4 border-b hidden sm:table-cell text-gray-400" style={{ borderColor: t.border }}>Source</th>
+                    <th className="font-bold text-[10px] uppercase tracking-wider px-6 py-4 border-b text-center text-gray-400" style={{ borderColor: t.border }}>Items</th>
+                    <th className="font-bold text-[10px] uppercase tracking-wider px-6 py-4 border-b text-right text-gray-400" style={{ borderColor: t.border }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-12" style={{ color: t.textMuted }}>
+                        <InboxIcon size={32} opacity={0.2} className="mx-auto mb-3" />
+                        <p className="text-sm font-semibold">No records found</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filtered.map((m, i) => {
+                      const active = selectedId === m.id;
+                      return (
+                        <tr 
+                          key={m.id} 
+                          onClick={() => { setSelectedId(m.id); if (isEditing) cancelEdit(); }}
+                          className="cursor-pointer transition-colors"
+                          style={{ background: active ? '#f3f0e0' : 'transparent' }}
+                          onMouseEnter={(e) => !active && (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
+                          onMouseLeave={(e) => !active && (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <td className="px-6 py-5 border-b font-medium text-gray-400" style={{ borderColor: t.border }}>{i + 1}</td>
+                          <td className="px-6 py-5 border-b" style={{ borderColor: t.border }}>
+                            <div className="font-bold truncate max-w-[200px]" style={{ color: t.text }}>{m.sender_name}</div>
+                          </td>
+                          <td className="px-6 py-5 border-b whitespace-nowrap" style={{ borderColor: t.border, color: t.text }}>
+                            <div className="text-sm font-medium">{dateOnly(m.createdAt)}</div>
+                          </td>
+                          <td className="px-6 py-5 border-b hidden sm:table-cell" style={{ borderColor: t.border }}>
+                            <div className="text-sm font-medium" style={{ color: t.text }}>{m.source}</div>
+                          </td>
+                          <td className="px-6 py-5 border-b text-center" style={{ borderColor: t.border }}>
+                            <span className="px-3 py-1.5 rounded-md text-[11px] font-bold" style={{ background: '#f2ecdb', color: '#333' }}>
+                              {m.receipts.length} Receipt{m.receipts.length > 1 ? 's' : ''}
+                            </span>
+                          </td>
+                          <td className="px-6 py-5 border-b text-right font-bold whitespace-nowrap" style={{ borderColor: t.border, color: t.text }}>
+                            {formatAmount(m.grand_total, m.receipts[0]?.currency)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-
-          <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg" style={{ background: t.surfaceAlt }}>
-            <Search size={14} className="text-gray-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)} placeholder="Search sender or merchant" className="bg-transparent outline-none text-sm flex-1" style={{ color: t.text }} />
-          </div>
-
-          <div className="flex gap-1.5 overflow-x-auto">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
-                style={filter === f.key ? { background: t.green, color: "#fff" } : { background: t.surfaceAlt, color: t.textMuted }}
-              >
-                {f.label} · {counts[f.key] ?? 0}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
-          {filtered.length === 0 && (
-            <p className="text-xs text-center py-8" style={{ color: t.textMuted }}>
-              No receipts match this filter.
-            </p>
-          )}
-          {filtered.map((m) => {
-            const meta = statusMeta(t, m.status);
-            return (
-              <button
-                key={m.id}
-                onClick={() => setSelectedId(m.id)}
-                className="w-full text-left px-3 py-3 rounded-xl transition-colors"
-                style={{ background: selected?.id === m.id ? t.surfaceAlt : "transparent" }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: meta.tone }} />
-                      <p className="text-sm font-semibold truncate" style={{ color: t.text }}>
-                        {m.sender_name}
-                      </p>
-                    </div>
-                    <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>
-                      {dateOnly(m.createdAt)} · {m.receipts.length} receipt{m.receipts.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <span className="text-sm font-semibold flex-shrink-0" style={{ color: t.text }}>
-                    {formatAmount(m.grand_total, m.receipts[0]?.currency)}
-                  </span>
+        ) : (
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="p-5 border-b shrink-0 flex flex-col gap-4" style={{ borderColor: t.border }}>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setListOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:opacity-80" style={{ background: `${t.accent}1a`, color: t.accent }}>
+                  <ArrowLeft size={16} />
+                </button>
+                <div>
+                  <h3 className="font-bold text-base" style={{ color: t.text }}>Receipt Inbox</h3>
+                  <p className="text-xs" style={{ color: t.textMuted }}>{filtered.length} submissions</p>
                 </div>
-              </button>
-            );
-          })}
-        </div>
+              </div>
+              <div className="relative w-full">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 opacity-40" color={t.text} />
+                <input
+                  type="text"
+                  placeholder="Search sender or merchant"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl outline-none"
+                  style={{ background: t.surfaceAlt, color: t.text }}
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              {filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-6" style={{ color: t.textMuted }}>
+                  <InboxIcon size={32} opacity={0.2} className="mb-3" />
+                  <p className="text-sm font-semibold">No records found</p>
+                </div>
+              ) : (
+                filtered.map((m) => {
+                  const active = selectedId === m.id;
+                  const meta = statusMeta(t, m.status);
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setSelectedId(m.id);
+                        if (isEditing) cancelEdit();
+                      }}
+                      className="w-full flex flex-col p-4 rounded-xl text-left transition-colors relative mb-2"
+                      style={{
+                        background: active ? '#f3f0e0' : "transparent",
+                      }}
+                    >
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: meta.tone }} />
+                          <span className="font-bold text-[14px] truncate" style={{ color: t.text }}>
+                            {m.sender_name}
+                          </span>
+                        </div>
+                        <span className="font-bold text-sm" style={{ color: t.text }}>
+                          {formatAmount(m.grand_total, m.receipts[0]?.currency)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs" style={{ color: t.textMuted, marginLeft: '16px' }}>
+                        <span>{dateOnly(m.createdAt)} · {m.receipts.length} receipt{m.receipts.length > 1 ? 's' : ''}</span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {!listOpen && (
         <button
           onClick={() => setListOpen(true)}
-          className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2.5 py-3 rounded-r-2xl shadow-lg z-10"
+          className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-3 py-4 rounded-r-2xl shadow-lg z-10"
           style={{ background: t.surface, color: t.green }}
           title="Show inbox list"
         >
@@ -1238,102 +1319,39 @@ function ReceiptInboxView({
         </button>
       )}
 
-      {/* DETAIL */}
-      <div className="flex-1 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden" style={{ background: t.surface }}>
-        {!selected ? (
-          <div className="h-full flex items-center justify-center">
-            <p className="text-sm" style={{ color: t.textMuted }}>
-              Select a receipt to view details.
-            </p>
-          </div>
-        ) : (
-          <div className="h-full overflow-y-auto p-8 space-y-7">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs" style={{ color: t.textMuted }}>
-                  {dateTime(selected.createdAt)} · via {selected.source}
-                </p>
-                <h2 className="text-2xl font-bold mt-0.5" style={{ color: t.text }}>
-                  {selected.sender_name}
-                </h2>
-                <div className="mt-1.5">
-                  <StatusBadge status={selected.status} t={t} />
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button onClick={() => setEditing(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: t.surfaceAlt }} title="Edit receipt values">
-                  <Pencil size={15} color={t.text} />
-                </button>
-                <button onClick={() => onDelete(selected.id)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: `${t.danger}1a` }} title="Delete this submission">
-                  <Trash2 size={15} color={t.danger} />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {selected.receipts.map((r, i) => (
-                <div key={i} className="rounded-xl p-4 space-y-2" style={{ background: t.surfaceAlt }}>
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-sm" style={{ color: t.text }}>
-                      {r.merchant_name}
-                    </p>
-                    <span className="font-mono text-sm font-semibold" style={{ color: t.text }}>
-                      {formatAmount(r.total_amount, r.currency)}
-                    </span>
-                  </div>
-                  <p className="text-[11px]" style={{ color: t.textMuted }}>
-                    {dateOnly(r.date)} {r.time ? `· ${r.time}` : ""}
-                  </p>
-                  {r.items.length > 0 && (
-                    <div className="pt-1 space-y-1">
-                      {r.items.map((it, ii) => (
-                        <div key={ii} className="flex items-center justify-between text-xs">
-                          <span style={{ color: t.text, opacity: 0.85 }}>{it.description}</span>
-                          <span className="font-mono" style={{ color: t.textMuted }}>
-                            {formatAmount(it.price, r.currency)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {r.drive_link && <ReceiptPhotoPreview link={r.drive_link} merchant={r.merchant_name} t={t} />}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between text-sm font-bold pt-3 border-t" style={{ borderColor: t.border, color: t.text }}>
-              <span>Grand Total</span>
-              <span className="font-mono">{formatAmount(selected.grand_total, selected.receipts[0]?.currency)}</span>
-            </div>
-
-            <div className="flex items-center gap-2.5 pt-2 flex-wrap">
-              <button onClick={() => exportMessageCsv(selected)} className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: t.green }}>
-                <FileDown size={15} />
-                Export CSV
+      {/* DETAIL OR MODAL */}
+      {isCompletedView ? (
+        selected && (
+          <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-8" 
+            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} 
+            onClick={() => { setSelectedId(null); if (isEditing) cancelEdit(); }}
+          >
+            <div 
+              className="relative w-full max-w-7xl max-h-full rounded-[24px] shadow-2xl overflow-hidden flex flex-col" 
+              style={{ background: t.surface }} 
+              onClick={e => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => { setSelectedId(null); if (isEditing) cancelEdit(); }} 
+                className="absolute top-6 right-6 z-50 w-10 h-10 rounded-full flex items-center justify-center bg-black/5 hover:bg-black/10 transition-colors"
+              >
+                <X size={20} />
               </button>
-
-              {selected.excel_link && (
-                <a
-                  href={selected.excel_link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{ background: t.surfaceAlt, color: t.text }}
-                >
-                  <ExternalLink size={15} />
-                  Open spreadsheet
-                </a>
-              )}
-
-              <StatusDropdown t={t} value={selected.status} onChange={(s) => onStatusChange(selected.id, s)} />
+              <div className="flex-1 overflow-y-auto">
+                {renderDetailContent()}
+              </div>
             </div>
           </div>
-        )}
-      </div>
+        )
+      ) : (
+        <div className="flex-1 rounded-[24px] shadow-sm overflow-hidden flex flex-col" style={{ background: t.surface }}>
+          {renderDetailContent()}
+        </div>
+      )}
     </div>
   );
 }
-
 /* ============================================================================
    MAIN DASHBOARD — default export, owns all app state
    ========================================================================= */
@@ -1457,7 +1475,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
   const openReceipt = useCallback((id?: string) => {
     if (id) setFocusReceiptId(id);
-    setView("inbox");
+    setView("inbox-processing");
   }, []);
 
   const refresh = async () => {
@@ -1621,28 +1639,49 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
             style={view === "dashboard" ? { background: '#0a4226', color: '#ffffff' } : { background: 'transparent', color: '#e2e8f0' }}
             title={isCollapsed ? "Dashboard" : undefined}
           >
-            <div className="flex items-center flex-1 gap-4">
+            <div className="flex items-center gap-3">
               <LayoutDashboard size={20} className="shrink-0" />
               {!isCollapsed && <span className="text-[15px] font-bold tracking-wide">Dashboard</span>}
             </div>
-            {!isCollapsed && view === "dashboard" && <div className="w-2.5 h-2.5 rounded-full bg-[#dca842] shrink-0" />}
+            
           </button>
           
-          <button 
-            onClick={() => setView("inbox")} 
-            className={`w-full flex items-center transition-all duration-300 rounded-xl ${isCollapsed ? 'justify-center p-3 relative' : 'px-4 py-3'}`} 
-            style={view === "inbox" ? { background: '#0a4226', color: '#ffffff' } : { background: 'transparent', color: '#e2e8f0' }}
-            title={isCollapsed ? "Records" : undefined}
-          >
-            <div className="flex items-center flex-1 gap-4">
-              <InboxIcon size={20} className="shrink-0" />
-              {!isCollapsed && <span className="text-[15px] font-bold tracking-wide">Records</span>}
-            </div>
-            {!isCollapsed && view === "inbox" && <div className="w-2.5 h-2.5 rounded-full bg-[#dca842] shrink-0" />}
-            {isCollapsed && openInboxCount > 0 && (
-              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#dca842]" />
+          <div className="flex flex-col">
+            <button 
+              onClick={() => setView(view.startsWith("inbox") ? "dashboard" : "inbox-processing")} 
+              className={`w-full flex items-center justify-between transition-all duration-300 rounded-xl ${isCollapsed ? 'justify-center p-3 relative' : 'px-4 py-3'}`} 
+              style={view.startsWith("inbox") ? { background: '#0a4226', color: '#ffffff' } : { background: 'transparent', color: '#e2e8f0' }}
+              title={isCollapsed ? "Records" : undefined}
+            >
+              <div className="flex items-center gap-3">
+                <InboxIcon size={20} className="shrink-0" />
+                {!isCollapsed && <span className="text-[15px] font-bold tracking-wide">Records</span>}
+              </div>
+              
+              {isCollapsed && openInboxCount > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#dca842]" />
+              )}
+            </button>
+            
+            {!isCollapsed && view.startsWith("inbox") && (
+              <div className="flex flex-col gap-1 mt-2 pl-4 border-l-2 ml-6" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+                <button 
+                  onClick={() => setView("inbox-processing")}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors"
+                  style={view === "inbox-processing" ? { color: '#ffffff', background: 'rgba(255,255,255,0.1)' } : { color: '#88a698' }}
+                >
+                  <Hourglass size={14} /> Processing
+                </button>
+                <button 
+                  onClick={() => setView("inbox-completed")}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors"
+                  style={view === "inbox-completed" ? { color: '#ffffff', background: 'rgba(255,255,255,0.1)' } : { color: '#88a698' }}
+                >
+                  <CheckCircle2 size={14} /> Completed
+                </button>
+              </div>
             )}
-          </button>
+          </div>
         </nav>
 
         {/* BOTTOM PROFILE / ACTIONS */}
@@ -1707,34 +1746,36 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
       {/* MAIN CONTENT WRAPPER */}
       <div className="flex-1 flex flex-col min-w-0 relative">
+        <ToastContainer 
+          t={t} 
+          notifications={notifications} 
+          onMarkRead={(id) => setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))}
+          onOpenReceipt={openReceipt}
+        />
         {/* BODY */}
         <main className="flex-1 relative overflow-hidden" style={{ background: t.pageBg }}>
           <AnimatePresence mode="wait">
-            {view === "inbox" ? (
-              <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="absolute inset-0 flex flex-col">
-                {/* Inbox specific mobile header just in case */}
-                <div className="absolute top-4 left-6 z-10 flex items-center gap-3 md:hidden">
-                  <h1 className="font-bold text-lg text-white drop-shadow-md">Receipt Inbox</h1>
+            {view.startsWith("inbox") ? (
+              <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="absolute inset-0 flex flex-col pt-8 pb-5">
+                {/* PAGE TITLE */}
+                <div className="px-8 mb-6 flex justify-between items-start shrink-0">
+                  <div>
+                    <h1 className="text-4xl font-extrabold tracking-tight mb-1" style={{ color: t.accent }}>
+                      {view === "inbox-completed" ? "Completed Records" : "Processing Records"}
+                    </h1>
+                  </div>
                 </div>
-                <ReceiptInboxView t={t} receipts={receipts} focusId={focusReceiptId} onDelete={deleteMessage} onStatusChange={changeStatus} onSaveEdit={saveEdit} query={query} setQuery={setQuery} />
+                <div className="px-8 flex-1 min-h-0 flex">
+                  <ReceiptInboxView t={t} receipts={receipts} focusId={focusReceiptId} onDelete={deleteMessage} onStatusChange={changeStatus} onSaveEdit={saveEdit} query={query} setQuery={setQuery} filterStatus={view === "inbox-completed" ? "completed" : "processing"} />
+                </div>
               </motion.div>
             ) : (
               <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="absolute inset-0 flex flex-col overflow-y-auto pt-8 pb-10">
-                {/* PAGE TITLE & NOTIFICATION BELL */}
+                {/* PAGE TITLE */}
                 <div className="px-8 mb-6 flex justify-between items-start shrink-0">
                   <div>
                     <h1 className="text-4xl font-extrabold tracking-tight mb-1" style={{ color: t.accent }}>Dashboard Overview</h1>
                   </div>
-                  
-                  <NotificationBell
-                    t={t}
-                    notifications={notifications}
-                    onMarkRead={(id) => setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))}
-                    onMarkAllRead={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
-                    onOpenReceipt={openReceipt}
-                    iconColor={t.greenDeep}
-                    bg={t.surface}
-                  />
                 </div>
 
                 {/* BOTTOM CONTENT (SPLIT) */}
@@ -1754,7 +1795,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                           style={{ color: t.greenDeep }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" && query.trim() !== "") {
-                              setView("inbox");
+                              setView("inbox-processing");
                             }
                           }}
                         />

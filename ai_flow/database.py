@@ -28,7 +28,7 @@ def save_to_mongo(receipt_data: dict) -> str:
         "drive_link": receipt_data.get("drive_link"),  # <-- save Drive URL
         # <-- save who sent it
         "sender_name": receipt_data.get("sender_name"),
-        "status": "Pending",
+        "status": "Processing",
         "source": "WhatsApp OpenClaw",
         "createdAt": datetime.now(timezone.utc),
     }
