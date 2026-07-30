@@ -6,4 +6,5 @@ node_modules/
 .env.local
 .env.*
 
+.openclaw
 client/.env.local

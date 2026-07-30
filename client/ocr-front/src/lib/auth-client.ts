@@ -80,3 +80,41 @@ export async function fetchSession(): Promise<PublicUser | null> {
   const data = await parseOrThrow(res);
   return (data.user as PublicUser | null) ?? null;
 }
+
+// ADMIN API
+
+export async function adminFetchUsers(): Promise<PublicUser[]> {
+  const res = await fetch(`${API_BASE}/api/admin/users`, { credentials: "include" });
+  const data = await parseOrThrow(res);
+  return data.users as PublicUser[];
+}
+
+export async function adminCreateUser(payload: SignupPayload & { role: string }): Promise<PublicUser> {
+  const res = await fetch(`${API_BASE}/api/admin/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  const data = await parseOrThrow(res);
+  return data.user as PublicUser;
+}
+
+export async function adminUpdateRole(userId: string, role: string): Promise<PublicUser> {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/role`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ role }),
+  });
+  const data = await parseOrThrow(res);
+  return data.user as PublicUser;
+}
+
+export async function adminDeleteUser(userId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  await parseOrThrow(res);
+}

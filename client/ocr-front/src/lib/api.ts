@@ -45,6 +45,16 @@ export async function fetchReceipts(): Promise<ReceiptMessagePayload[]> {
   return handleResponse<ReceiptMessagePayload[]>(response);
 }
 
+export async function getReceiptSummary(sender: string): Promise<ReceiptMessagePayload[]> {
+  const response = await fetch(`/api/receipts?sender=${encodeURIComponent(sender)}`);
+  return handleResponse<ReceiptMessagePayload[]>(response);
+}
+
+export async function getServerIp(): Promise<{ ip: string; port: number }> {
+  const response = await fetch("/api/ip");
+  return response.json();
+}
+
 export async function createReceipt(receipt: Omit<ReceiptMessagePayload, "id" | "createdAt">): Promise<ReceiptMessagePayload> {
   const response = await fetch("/api/receipts", {
     method: "POST",
