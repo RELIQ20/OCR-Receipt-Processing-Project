@@ -1,37 +1,12 @@
-const container = document.getElementById('container');
-const showRegister = document.getElementById('showRegister');
-const showLogin = document.getElementById('showLogin');
-const loginForm = document.getElementById('loginForm');
-const registerForm = document.getElementById('registerForm');
+import { useState, type FormEvent, type InputHTMLAttributes } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Loader2, Flame } from "lucide-react";
+import { signup, login, AuthError, type PublicUser } from "./lib/auth-client";
 
-showRegister.addEventListener('click', () => {
-  container.classList.add('active');
-});
+type Mode = "login" | "signup";
+type FieldErrors = Record<string, string>;
 
-showLogin.addEventListener('click', () => {
-  container.classList.remove('active');
-});
-
-// Prevent actual submission — this is a front-end demo only.
-loginForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const btn = loginForm.querySelector('.btn-primary');
-  const original = btn.textContent;
-  btn.textContent = 'Signing in…';
-  setTimeout(() => { btn.textContent = original; }, 1200);
-});
-
-<<<<<<< HEAD
-registerForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const btn = registerForm.querySelector('.btn-primary');
-  const original = btn.textContent;
-  btn.textContent = 'Creating account…';
-  setTimeout(() => { btn.textContent = original; }, 1200);
-});
-=======
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const ERROR_COPY: Record<string, string> = {
   invalid_credentials: "That username/email or password isn't right.",
   account_exists: "An account with that username or email already exists.",
@@ -50,29 +25,45 @@ function friendlyError(err: unknown): string {
   return "Couldn't reach the server. Check your connection and try again.";
 }
 
-function Field({ icon: Icon, error, ...props }: InputHTMLAttributes<HTMLInputElement> & { icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; error?: string }) {
+// Enhanced Input field with focus animations
+function InputField({ error, ...props }: InputHTMLAttributes<HTMLInputElement> & { error?: string }) {
+  const [isFocused, setIsFocused] = useState(false);
+
   return (
-    <div>
-      <div
-        className="flex items-center gap-2.5 px-3.5 py-3 rounded-xl border transition-colors"
-        style={{
-          background: t.surfaceAlt,
-          borderColor: error ? t.danger : t.border,
+    <motion.div
+      className="w-full relative"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <motion.div
+        animate={{
+          boxShadow: isFocused ? "0px 0px 0px 2px rgba(59, 130, 246, 0.2)" : "0px 0px 0px 0px rgba(59, 130, 246, 0)",
+          borderColor: isFocused ? "#3B82F6" : error ? "#EF4444" : "#F3F4F6",
+          backgroundColor: isFocused ? "#FFFFFF" : "#F9FAFB"
         }}
+        className="rounded-xl overflow-hidden border transition-colors duration-300"
       >
-        <Icon color={t.textMuted} strokeWidth={1.8} />
         <input
           {...props}
-          className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#5C6B65]/50"
-          style={{ color: t.text }}
+          onFocus={(e) => { setIsFocused(true); props.onFocus?.(e); }}
+          onBlur={(e) => { setIsFocused(false); props.onBlur?.(e); }}
+          className="w-full px-4 py-3.5 bg-transparent focus:outline-none text-sm text-gray-800 placeholder-gray-400"
         />
-      </div>
-      {error && (
-        <p className="text-[11px] mt-1 ml-1" style={{ color: t.danger }}>
-          {error}
-        </p>
-      )}
-    </div>
+      </motion.div>
+      <AnimatePresence>
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, height: 0, y: -5 }}
+            animate={{ opacity: 1, height: "auto", y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -5 }}
+            className="text-[11px] text-red-500 mt-1.5 ml-1 font-medium"
+          >
+            {error}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -81,38 +72,23 @@ export interface AuthPageProps {
 }
 
 export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState<Mode>("signup");
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [showPassword, setShowPassword] = useState(false);
 
   const [identifier, setIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
 
   const switchMode = (next: Mode) => {
     setMode(next);
     setFormError(null);
     setFieldErrors({});
-    setShowPassword(false);
-  };
-
-  const validateSignup = (): FieldErrors => {
-    const errs: FieldErrors = {};
-    if (!firstName.trim()) errs.firstName = "Required";
-    if (!lastName.trim()) errs.lastName = "Required";
-    if (username.trim().length < 3) errs.username = "At least 3 characters";
-    if (!EMAIL_RE.test(email)) errs.email = "Enter a valid email";
-    if (signupPassword.length < 8) errs.password = "At least 8 characters";
-    if (confirmPassword !== signupPassword) errs.confirmPassword = "Passwords don't match";
-    return errs;
   };
 
   const handleLogin = async (e: FormEvent) => {
@@ -120,8 +96,8 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
     setFormError(null);
     if (!identifier.trim() || !loginPassword) {
       setFieldErrors({
-        identifier: !identifier.trim() ? "Required" : undefined,
-        password: !loginPassword ? "Required" : undefined,
+        identifier: !identifier.trim() ? "Required" : "",
+        password: !loginPassword ? "Required" : "",
       });
       return;
     }
@@ -140,17 +116,26 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
   const handleSignup = async (e: FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    const errs = validateSignup();
+    const errs: FieldErrors = {};
+    if (!fullName.trim()) errs.fullName = "Required";
+    if (username.trim().length < 3) errs.username = "At least 3 characters";
+    if (!EMAIL_RE.test(email)) errs.email = "Enter a valid email";
+    if (signupPassword.length < 8) errs.password = "At least 8 characters";
+
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
       return;
     }
     setFieldErrors({});
     setLoading(true);
+
+    const [firstName = "", ...lastNameParts] = fullName.trim().split(" ");
+    const lastName = lastNameParts.join(" ") || " ";
+
     try {
       const user = await signup({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        firstName,
+        lastName,
         username: username.trim(),
         email: email.trim(),
         password: signupPassword,
@@ -164,229 +149,272 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
   };
 
   return (
-    <div className="min-h-screen w-full flex" style={{ background: t.pageBg }}>
-      <div
-        className="hidden lg:flex flex-col justify-between w-[46%] px-14 py-12 relative overflow-hidden"
-        style={{ background: `linear-gradient(160deg, ${t.panelBg} 0%, ${t.panelBgDeep} 100%)` }}
+    <div className="min-h-screen w-full flex bg-[#F4F7FB] p-0 md:p-6 lg:p-12 overflow-hidden relative">
+      {/* Soft background glow */}
+      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-400/20 rounded-full blur-[120px] -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-indigo-400/20 rounded-full blur-[120px] translate-x-1/2 translate-y-1/2 pointer-events-none" />
+
+      {/* Main Container */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-6xl mx-auto flex-1 flex flex-col md:flex-row bg-white shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] md:rounded-[2.5rem] overflow-hidden relative z-10"
       >
-        <div
-          className="absolute inset-0 opacity-[0.4] pointer-events-none"
-          style={{
-            background:
-              "radial-gradient(circle at 20% 15%, rgba(244,196,48,0.10), transparent 45%), radial-gradient(circle at 80% 85%, rgba(0,86,59,0.35), transparent 50%)",
-          }}
-        />
 
-        <div className="relative z-10 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: t.accent }}>
-            <Sparkles size={15} color={t.accentInk} />
-          </div>
-          <span className="font-bold tracking-tight text-lg" style={{ color: t.onPanel }}>
-            LifeReceipt
-          </span>
-        </div>
+        {/* Left Panel (Premium Blue Branding) */}
+        <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 md:w-[45%] p-10 lg:p-16 flex flex-col relative overflow-hidden hidden md:flex">
 
-        <div className="relative z-10 flex-1 flex items-center justify-center">
-          <CardStack name="Your Spending" balance="₱12,480.50" size="hero" autoRotate />
-        </div>
-
-        <div className="relative z-10 max-w-sm">
-          <p className="text-xl font-semibold leading-snug" style={{ color: t.onPanel }}>
-            Every receipt, tracked automatically.
-          </p>
-          <p className="text-sm mt-2" style={{ color: t.onPanelMuted }}>
-            Forward a photo on WhatsApp and LifeReceipt reads it, sorts it, and keeps your
-            spending totals current — no spreadsheets required.
-          </p>
-        </div>
-      </div>
-
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-[400px]">
-          <div className="lg:hidden flex items-center gap-2 mb-8 justify-center">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: t.accent }}>
-              <Sparkles size={15} color={t.accentInk} />
-            </div>
-            <span className="font-bold tracking-tight text-lg" style={{ color: t.text }}>
-              LifeReceipt
-            </span>
-          </div>
-
-          <div
-            className="flex items-center gap-1 rounded-full p-1 mb-8 mx-auto w-full max-w-[280px]"
-            style={{ background: t.surfaceAlt }}
+          {/* Animated Background Hexagons */}
+          <motion.div
+            animate={{ y: [0, -20, 0], opacity: [0.1, 0.2, 0.1] }}
+            transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute right-0 top-1/4"
           >
-            {(["login", "signup"] as Mode[]).map((m) => {
-              const active = mode === m;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => switchMode(m)}
-                  className="relative flex-1 text-sm font-semibold py-2 rounded-full transition-colors"
-                  style={{ color: active ? "#fff" : t.textMuted }}
+            <svg width="250" height="450" viewBox="0 0 200 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M50 0L150 50L150 150L50 100Z" fill="white" />
+              <path d="M100 200L200 250L200 350L100 300Z" fill="white" />
+            </svg>
+          </motion.div>
+
+          <motion.div
+            animate={{ y: [0, 20, 0], opacity: [0.1, 0.15, 0.1] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+            className="absolute -left-10 bottom-32"
+          >
+            <svg width="150" height="300" viewBox="0 0 100 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M25 0L75 25L75 75L25 50Z" fill="white" />
+            </svg>
+          </motion.div>
+
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2, duration: 0.5 }}
+            className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-12 backdrop-blur-md z-10 border border-white/20 shadow-lg"
+          >
+            <Flame className="text-white" size={24} />
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.6 }}
+            className="text-white text-4xl lg:text-[3.2rem] font-bold leading-[1.1] z-10 relative tracking-tight"
+          >
+            One click to go<br />all digital.
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="text-blue-100/80 mt-6 max-w-sm z-10 leading-relaxed"
+          >
+            Streamline your receipts, organize your expenses, and take control of your financial data effortlessly.
+          </motion.p>
+
+          {/* Floating Dashboard Illustration */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6, duration: 0.8, type: "spring", bounce: 0.4 }}
+            className="mt-auto relative z-10 w-full max-w-[400px] mx-auto"
+          >
+            <motion.div
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+              className="bg-white/10 backdrop-blur-xl border border-white/20 p-6 rounded-[24px] shadow-2xl transform -rotate-3 hover:rotate-0 transition-transform duration-500"
+            >
+              {/* Dashboard Header */}
+              <div className="flex gap-2 mb-4">
+                <div className="w-3 h-3 rounded-full bg-red-400/80 shadow-sm"></div>
+                <div className="w-3 h-3 rounded-full bg-yellow-400/80 shadow-sm"></div>
+                <div className="w-3 h-3 rounded-full bg-green-400/80 shadow-sm"></div>
+              </div>
+              <div className="h-4 w-32 bg-white/30 rounded-full mb-6"></div>
+
+              {/* Dashboard Content */}
+              <div className="flex gap-4">
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="h-20 bg-blue-400/40 rounded-xl flex items-end p-3 border border-white/10">
+                    <svg className="w-full h-10 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                  </div>
+                  <div className="h-14 bg-white/10 rounded-xl flex items-center justify-center border border-white/10">
+                    <div className="w-8 h-8 rounded-full bg-green-400/80 border-2 border-white/50 shadow-[0_0_15px_rgba(74,222,128,0.5)]"></div>
+                  </div>
+                </div>
+
+                <div className="flex-[1.5] bg-[#0A1A2F]/60 rounded-xl p-4 flex items-center border border-white/10 overflow-hidden relative">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent skew-x-12 translate-x-[-100%] animate-[shimmer_3s_infinite]" />
+                  <svg className="w-full h-16 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 100 40" preserveAspectRatio="none"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M0 30 Q 25 10, 50 20 T 100 10" className="text-blue-400 drop-shadow-md"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M0 20 Q 25 30, 50 15 T 100 25" className="drop-shadow-md"></path></svg>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        </div>
+
+        {/* Right Panel (Interactive Form) */}
+        <div className="flex-1 flex flex-col justify-center px-8 py-12 lg:px-24 bg-white relative z-20">
+          <div className="w-full max-w-[380px] mx-auto">
+            {/* Mobile Logo */}
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="md:hidden w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center mb-8 shadow-xl shadow-blue-500/30"
+            >
+              <Flame className="text-white" size={24} />
+            </motion.div>
+
+            <motion.h2
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-3xl font-extrabold text-gray-900 mb-8 tracking-tight"
+            >
+              {mode === "signup" ? "Create an account" : "Welcome back"}
+            </motion.h2>
+
+            <AnimatePresence mode="wait">
+              {formError && (
+                <motion.div
+                  key="form-error"
+                  initial={{ opacity: 0, height: 0, y: -10 }}
+                  animate={{ opacity: 1, height: "auto", y: 0 }}
+                  exit={{ opacity: 0, height: 0, scale: 0.95 }}
+                  className="mb-6 p-4 rounded-xl bg-red-50 text-red-600 text-[13px] font-medium border border-red-100 flex items-start gap-3"
                 >
-                  {active && (
-                    <motion.div
-                      layoutId="auth-mode-pill"
-                      className="absolute inset-0 rounded-full"
-                      style={{ background: t.green }}
-                      transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                    />
+                  <div className="bg-red-100 p-1 rounded-full mt-0.5">
+                    <svg className="w-3 h-3 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                  </div>
+                  {formError}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="relative">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={mode}
+                  initial={{ opacity: 0, x: mode === "signup" ? 20 : -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: mode === "signup" ? -20 : 20 }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                >
+                  {mode === "signup" ? (
+                    <form onSubmit={handleSignup} className="space-y-4">
+                      <InputField
+                        type="text"
+                        placeholder="Full Name"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        error={fieldErrors.fullName}
+                      />
+                      <InputField
+                        type="text"
+                        placeholder="Username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        error={fieldErrors.username}
+                      />
+                      <InputField
+                        type="email"
+                        placeholder="Email Address"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        error={fieldErrors.email}
+                      />
+                      <InputField
+                        type="password"
+                        placeholder="Password"
+                        value={signupPassword}
+                        onChange={(e) => setSignupPassword(e.target.value)}
+                        error={fieldErrors.password}
+                      />
+
+                      <motion.p
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+                        className="text-[12px] text-gray-500 mt-6 leading-relaxed pr-4"
+                      >
+                        By continuing, you agree to our{" "}
+                        <a href="#" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">Terms of Service</a>
+                        {" "}and{" "}
+                        <a href="#" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">Privacy Policy</a>
+                      </motion.p>
+
+                      <motion.button
+                        whileHover={{ scale: 1.01, boxShadow: "0 10px 25px -5px rgba(37, 99, 235, 0.4)" }}
+                        whileTap={{ scale: 0.98 }}
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[15px] font-semibold py-3.5 rounded-xl transition-all mt-6 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 disabled:opacity-70 disabled:cursor-not-allowed"
+                      >
+                        {loading ? <Loader2 className="animate-spin" size={18} /> : "Get Started"}
+                      </motion.button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleLogin} className="space-y-4">
+                      <InputField
+                        type="text"
+                        placeholder="Username or Email"
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
+                        error={fieldErrors.identifier}
+                      />
+                      <InputField
+                        type="password"
+                        placeholder="Password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        error={fieldErrors.password}
+                      />
+
+                      <div className="flex justify-end pt-1">
+                        <a href="#" className="text-[13px] text-blue-600 font-medium hover:text-blue-700 transition-colors">
+                          Forgot password?
+                        </a>
+                      </div>
+
+                      <motion.button
+                        whileHover={{ scale: 1.01, boxShadow: "0 10px 25px -5px rgba(37, 99, 235, 0.4)" }}
+                        whileTap={{ scale: 0.98 }}
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[15px] font-semibold py-3.5 rounded-xl transition-all mt-6 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 disabled:opacity-70 disabled:cursor-not-allowed"
+                      >
+                        {loading ? <Loader2 className="animate-spin" size={18} /> : "Sign In"}
+                      </motion.button>
+                    </form>
                   )}
-                  <span className="relative">{m === "login" ? "Log in" : "Sign up"}</span>
-                </button>
-              );
-            })}
-          </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
 
-          <h1 className="text-2xl font-bold mb-1" style={{ color: t.text }}>
-            {mode === "login" ? "Welcome back" : "Create your account"}
-          </h1>
-          <p className="text-sm mb-6" style={{ color: t.textMuted }}>
-            {mode === "login"
-              ? "Log in to see your latest receipts and spending."
-              : "Start tracking every receipt in one place."}
-          </p>
-
-          <AnimatePresence>
-            {formError && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-4 px-3.5 py-2.5 rounded-xl text-xs overflow-hidden"
-                style={{ background: `${t.danger}12`, color: t.danger, border: `1px solid ${t.danger}30` }}
-              >
-                {formError}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {mode === "login" ? (
-            <form onSubmit={handleLogin} className="space-y-3.5" noValidate>
-              <Field
-                icon={Mail}
-                type="text"
-                placeholder="Username or email"
-                value={identifier}
-                onChange={(event) => setIdentifier(event.target.value)}
-                error={fieldErrors.identifier}
-              />
-              <div className="relative">
-                <Field
-                  icon={Lock}
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Password"
-                  value={loginPassword}
-                  onChange={(event) => setLoginPassword(event.target.value)}
-                  error={fieldErrors.password}
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5C6B65]"
-                  onClick={() => setShowPassword((value) => !value)}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold"
-                style={{ background: t.green, color: "#fff" }}
-              >
-                {loading ? <Loader2 className="animate-spin" size={16} /> : "Continue"}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleSignup} className="space-y-3.5" noValidate>
-              <div className="grid grid-cols-2 gap-3.5">
-                <Field
-                  icon={User}
-                  type="text"
-                  placeholder="First name"
-                  value={firstName}
-                  onChange={(event) => setFirstName(event.target.value)}
-                  error={fieldErrors.firstName}
-                />
-                <Field
-                  icon={User}
-                  type="text"
-                  placeholder="Last name"
-                  value={lastName}
-                  onChange={(event) => setLastName(event.target.value)}
-                  error={fieldErrors.lastName}
-                />
-              </div>
-              <Field
-                icon={User}
-                type="text"
-                placeholder="Username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                error={fieldErrors.username}
-              />
-              <Field
-                icon={Mail}
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                error={fieldErrors.email}
-              />
-              <div className="relative">
-                <Field
-                  icon={Lock}
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Password"
-                  value={signupPassword}
-                  onChange={(event) => setSignupPassword(event.target.value)}
-                  error={fieldErrors.password}
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5C6B65]"
-                  onClick={() => setShowPassword((value) => !value)}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              <Field
-                icon={Lock}
-                type={showPassword ? "text" : "password"}
-                placeholder="Confirm password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                error={fieldErrors.confirmPassword}
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold"
-                style={{ background: t.green, color: "#fff" }}
-              >
-                {loading ? <Loader2 className="animate-spin" size={16} /> : "Create account"}
-              </button>
-            </form>
-          )}
-
-          <div className="mt-6 text-center text-sm" style={{ color: t.textMuted }}>
-            {mode === "login" ? (
-              <span>
-                Don&apos;t have an account?{' '}
-                <button type="button" className="font-semibold text-[#0F241B] underline" onClick={() => switchMode("signup")}>Create one</button>
-              </span>
-            ) : (
-              <span>
-                Already have an account?{' '}
-                <button type="button" className="font-semibold text-[#0F241B] underline" onClick={() => switchMode("login")}>Log in</button>
-              </span>
-            )}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="mt-10 text-center text-[14px] text-gray-600 font-medium"
+            >
+              {mode === "signup" ? (
+                <>
+                  Already a member?{" "}
+                  <button type="button" onClick={() => switchMode("login")} className="text-blue-600 font-bold hover:text-blue-700 transition-colors ml-1">
+                    Sign in
+                  </button>
+                </>
+              ) : (
+                <>
+                  Don't have an account?{" "}
+                  <button type="button" onClick={() => switchMode("signup")} className="text-blue-600 font-bold hover:text-blue-700 transition-colors ml-1">
+                    Sign up
+                  </button>
+                </>
+              )}
+            </motion.div>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
->>>>>>> origin/fixedstuff
