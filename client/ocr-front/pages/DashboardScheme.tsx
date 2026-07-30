@@ -289,7 +289,7 @@ function buildSeries(flat: { date: string; amount: number }[], range: DateRange)
   if (range === "weekly") {
     const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const buckets = Array(7).fill(0).map(() => ({ v: 0, c: 0 }));
-    
+
     // Find Monday of the current week
     const currentDay = now.getDay();
     const diffToMonday = (currentDay === 0 ? 6 : currentDay - 1);
@@ -310,7 +310,7 @@ function buildSeries(flat: { date: string; amount: number }[], range: DateRange)
   }
 
   if (range === "monthly") {
-    const buckets = [{v:0, c:0}, {v:0, c:0}, {v:0, c:0}, {v:0, c:0}];
+    const buckets = [{ v: 0, c: 0 }, { v: 0, c: 0 }, { v: 0, c: 0 }, { v: 0, c: 0 }];
     flat.forEach((r) => {
       const d = new Date(r.date);
       if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
@@ -665,7 +665,7 @@ function TransactionHistoryChart({ data, t }: { data: { label: string; value: nu
             <stop offset="100%" stopColor={t.accent} stopOpacity={0} />
           </linearGradient>
         </defs>
-        
+
         {areaPath && (
           <>
             <clipPath id="areaClipReveal">
@@ -677,47 +677,47 @@ function TransactionHistoryChart({ data, t }: { data: { label: string; value: nu
                 width={W}
               />
             </clipPath>
-            <path 
-              key={`area-${points.length}`} 
-              d={areaPath} 
-              fill="url(#chartFill)" 
+            <path
+              key={`area-${points.length}`}
+              d={areaPath}
+              fill="url(#chartFill)"
               clipPath="url(#areaClipReveal)"
             />
           </>
         )}
-        
+
         {linePath && (
-          <motion.path 
-            key={`line-${points.length}`} 
-            initial={{ pathLength: 0 }} 
-            animate={{ pathLength: 1 }} 
-            transition={{ duration: 1, ease: "easeOut" }} 
-            d={linePath} 
-            fill="none" 
-            stroke={t.green} 
-            strokeWidth={3} 
-            strokeLinecap="round" 
+          <motion.path
+            key={`line-${points.length}`}
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            d={linePath}
+            fill="none"
+            stroke={t.green}
+            strokeWidth={3}
+            strokeLinecap="round"
           />
         )}
-        
+
         {points.map((p, i) => (
           <g key={`${i}-${points.length}`} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
-            <motion.circle 
-              initial={{ scale: 0 }} 
-              animate={{ scale: 1 }} 
-              transition={{ delay: 1.2 + i * 0.1, type: "spring" }} 
-              cx={p.x} 
-              cy={p.y} 
-              r={hovered === i ? 6 : 4} 
-              fill={t.accent} 
-              stroke={t.surface} 
-              strokeWidth={hovered === i ? 2 : 1.5} 
-              style={{ transition: "r 0.2s, stroke-width 0.2s" }} 
+            <motion.circle
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 1.2 + i * 0.1, type: "spring" }}
+              cx={p.x}
+              cy={p.y}
+              r={hovered === i ? 6 : 4}
+              fill={t.accent}
+              stroke={t.surface}
+              strokeWidth={hovered === i ? 2 : 1.5}
+              style={{ transition: "r 0.2s, stroke-width 0.2s" }}
             />
             <circle cx={p.x} cy={p.y} r={16} fill="transparent" />
           </g>
         ))}
-        
+
         {data.map((d, i) => (
           <text key={i} x={points[i]?.x ?? 0} y={H - 4} textAnchor="middle" fontSize={11} fill={t.textMuted}>
             {d.label}
@@ -755,74 +755,6 @@ function TransactionHistoryChart({ data, t }: { data: { label: string; value: nu
         </AnimatePresence>
       </svg>
     </div>
-  );
-}
-
-/* ============================================================================
-   PIPELINE STATUS + RECENT STATUS STRIP
-   ========================================================================= */
-
-function PipelineStatus({ counts, t }: { counts: Record<string, number>; t: ThemeTokens }) {
-  const ORDER = ["total", "processing", "confirmed"];
-  const SUBTITLES: Record<string, string> = {
-    total: "received from all users",
-    processing: "currently processing",
-    confirmed: "verified successfully",
-  };
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {ORDER.map((key) => {
-        const m = statusMeta(t, key);
-        const Icon = m.icon;
-        return (
-          <div key={key} className="flex flex-col justify-between rounded-2xl p-6 shadow-sm transition-all hover:shadow-md border" style={{ background: t.surface, borderColor: t.border }}>
-            <div className="flex items-start justify-between mb-4">
-              <p className="text-xs font-bold tracking-wider uppercase mt-1" style={{ color: t.textMuted }}>
-                {m.label}
-              </p>
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${m.tone}22` }}>
-                <Icon size={14} color={m.tone} className={m.spin ? "animate-spin" : m.pulse ? "animate-pulse" : ""} />
-              </div>
-            </div>
-            <div>
-              <p className="text-[34px] font-extrabold mb-0.5 leading-none" style={{ color: t.greenDeep }}>
-                {counts[key] ?? 0}
-              </p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function StatusUpdateStrip({ receipts, t, onOpen }: { receipts: ReceiptMessage[]; t: ThemeTokens; onOpen: (id: string) => void }) {
-  const recent = receipts.slice(0, 8);
-  if (recent.length === 0) return null;
-
-  return (
-    <section className="rounded-2xl p-6 border" style={{ background: t.surface, borderColor: t.border }}>
-      <p className="text-xs font-bold tracking-wider uppercase mb-4" style={{ color: t.textMuted }}>
-        Recent Status Updates
-      </p>
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {recent.map((m) => {
-          const meta = statusMeta(t, m.status);
-          const Icon = meta.icon;
-          return (
-            <button key={m.id} onClick={() => onOpen(m.id)} className="flex items-center gap-2 shrink-0 rounded-full px-3 py-1.5" style={{ background: t.surfaceAlt }}>
-              <Icon size={11} color={meta.tone} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
-              <span className="text-[11px]" style={{ color: t.text }}>
-                {m.sender_name}
-              </span>
-              <span className="text-[10px]" style={{ color: t.textMuted }}>
-                {formatAmount(m.grand_total, m.receipts[0]?.currency)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -1358,7 +1290,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
   const receiptsRef = useRef<ReceiptMessage[]>([]);
   const hasLoadedOnceRef = useRef(false);
-  
+
   useEffect(() => {
     getServerIp()
       .then((res) => setBackendUrl(`http://${res.ip}:${res.port}`))
@@ -1486,7 +1418,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
   }, [query, senders, view]);
 
   const chartData = useMemo(() => buildSeries(flatRows, range), [flatRows, range]);
-  
+
   const { currentTotal, prevTotal } = useMemo(() => {
     const now = new Date();
     let current = 0;
@@ -1583,7 +1515,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
       <ChatAssistant accent={t.accent} currency="PHP" buildContext={() => buildSpendingContext(receipts, "PHP")} />
 
       {/* GLOBAL SIDEBAR */}
-      <aside 
+      <aside
         className={`flex-shrink-0 flex flex-col transition-all duration-300 shadow-[4px_0_24px_rgba(0,0,0,0.03)] relative z-30 ${isCollapsed ? 'w-20' : 'w-64'}`}
         style={{ background: t.sidebarBg, color: t.onBar }}
       >
@@ -1601,7 +1533,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
         </div>
 
         {/* COLLAPSE TOGGLE */}
-        <div 
+        <div
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="flex items-center justify-center py-4 cursor-pointer transition-colors"
           style={{ color: '#88a698' }}
@@ -1615,9 +1547,9 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
         {/* NAVIGATION */}
         <nav className="flex-1 space-y-2 px-3 mt-2">
-          <button 
+          <button
             onClick={() => setView("dashboard")}
-            className={`w-full flex items-center transition-all duration-300 rounded-xl ${isCollapsed ? 'justify-center p-3' : 'px-4 py-3'}`} 
+            className={`w-full flex items-center transition-all duration-300 rounded-xl ${isCollapsed ? 'justify-center p-3' : 'px-4 py-3'}`}
             style={view === "dashboard" ? { background: '#0a4226', color: '#ffffff' } : { background: 'transparent', color: '#e2e8f0' }}
             title={isCollapsed ? "Dashboard" : undefined}
           >
@@ -1627,10 +1559,10 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
             </div>
             {!isCollapsed && view === "dashboard" && <div className="w-2.5 h-2.5 rounded-full bg-[#dca842] shrink-0" />}
           </button>
-          
-          <button 
-            onClick={() => setView("inbox")} 
-            className={`w-full flex items-center transition-all duration-300 rounded-xl ${isCollapsed ? 'justify-center p-3 relative' : 'px-4 py-3'}`} 
+
+          <button
+            onClick={() => setView("inbox")}
+            className={`w-full flex items-center transition-all duration-300 rounded-xl ${isCollapsed ? 'justify-center p-3 relative' : 'px-4 py-3'}`}
             style={view === "inbox" ? { background: '#0a4226', color: '#ffffff' } : { background: 'transparent', color: '#e2e8f0' }}
             title={isCollapsed ? "Records" : undefined}
           >
@@ -1664,7 +1596,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
             <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center font-bold text-[15px] uppercase" style={{ background: '#0a4226', color: '#fff' }}>
               {currentUser ? `${currentUser.firstName?.[0] || ""}${currentUser.lastName?.[0] || ""}` : "NL"}
             </div>
-            
+
             {!isCollapsed && (
               <div className="flex-1 min-w-0 pr-1 flex flex-col justify-center">
                 <p className="text-[14px] font-bold text-white truncate leading-tight tracking-wide">
@@ -1725,7 +1657,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                   <div>
                     <h1 className="text-4xl font-extrabold tracking-tight mb-1" style={{ color: t.accent }}>Dashboard Overview</h1>
                   </div>
-                  
+
                   <NotificationBell
                     t={t}
                     notifications={notifications}
@@ -1739,7 +1671,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
                 {/* BOTTOM CONTENT (SPLIT) */}
                 <div className="flex-1 flex flex-col lg:flex-row gap-6 px-8 min-h-0 shrink-0">
-                  
+
                   {/* LEFT MAIN CONTENT */}
                   <div className="flex-1 flex flex-col min-w-0 space-y-6">
                     {/* SEARCH BAR */}
@@ -1873,8 +1805,8 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                   </aside>
                 </div>
               </motion.div>
-        )}
-      </AnimatePresence>
+            )}
+          </AnimatePresence>
         </main>
       </div>
     </div>
