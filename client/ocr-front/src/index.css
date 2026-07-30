@@ -1,4 +1,5 @@
 /* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 html,
@@ -7,8 +8,14 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
+  font-family: 'Inter', sans-serif;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+/* Give all Lucide icons a premium thinner stroke */
+.lucide {
+  stroke-width: 1.5px;
 }
 
 * {

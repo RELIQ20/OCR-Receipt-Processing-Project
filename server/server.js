@@ -3,10 +3,12 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const path = require("path");
+const exceljs = require("exceljs");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const Receipt = require("./models/Receipt");
 const authRouter = require("./routes/auth");
+const adminRouter = require("./routes/admin");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -130,6 +132,7 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 app.use("/api/auth", authRouter);
+app.use("/api/admin", adminRouter);
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, message: "Server is running", mongoConnected: isMongoConnected });
@@ -141,6 +144,105 @@ app.get("/api/receipts", async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch receipts", error);
     res.status(500).json({ error: "failed_to_fetch_receipts" });
+  }
+});
+
+app.get("/api/receipts/export", async (req, res) => {
+  try {
+    const { sender } = req.query;
+    if (!sender) {
+      return res.status(400).json({ error: "missing_sender" });
+    }
+
+    const allReceipts = await listReceipts();
+    const senderReceipts = allReceipts.filter(
+      (r) => r.sender_name && r.sender_name.trim().toLowerCase() === sender.trim().toLowerCase()
+    );
+
+    const workbook = new exceljs.Workbook();
+    workbook.creator = "LifeReceipt System";
+    workbook.created = new Date();
+
+    const sheets = {
+      Processing: workbook.addWorksheet("Processing"),
+      Confirmed: workbook.addWorksheet("Confirmed"),
+    };
+
+    // Initialize columns for all sheets
+    Object.values(sheets).forEach((sheet) => {
+      sheet.columns = [
+        { header: "Date", key: "date", width: 15 },
+        { header: "Merchant", key: "merchant", width: 30 },
+        { header: "Amount", key: "amount", width: 15 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Items Count", key: "itemsCount", width: 15 },
+        { header: "Source", key: "source", width: 20 },
+      ];
+      sheet.getRow(1).font = { bold: true };
+    });
+
+    senderReceipts.forEach((msg) => {
+      // Determine which sheet to put it in based on status.
+      // Now only "Processing" and "Confirmed"
+      let statusKey = msg.status ? msg.status.trim().toLowerCase() : "processing";
+      
+      let sheetKey = "Processing";
+      if (statusKey === "confirmed") {
+        sheetKey = "Confirmed";
+      }
+
+      const sheet = sheets[sheetKey] || sheets["Processing"]; // fallback
+
+      msg.receipts.forEach((r) => {
+        sheet.addRow({
+          date: r.date,
+          merchant: r.merchant_name,
+          amount: r.total_amount,
+          currency: r.currency,
+          itemsCount: r.items ? r.items.length : 0,
+          source: msg.source,
+        });
+      });
+    });
+
+    // Add a Total row to each sheet
+    ["Processing", "Confirmed"].forEach(sheetKey => {
+      const sheet = sheets[sheetKey];
+      if (sheet && sheet.rowCount > 1) { // If there are rows besides the header
+        sheet.addRow({}); // Empty row for spacing
+        
+        // Sum up the amounts (assuming amount is in column C / index 3)
+        let total = 0;
+        sheet.eachRow((row, rowNumber) => {
+          if (rowNumber > 1 && rowNumber < sheet.rowCount) { // skip header and the empty row
+            const val = row.getCell('amount').value;
+            if (typeof val === 'number') total += val;
+            else if (typeof val === 'string') total += parseFloat(val) || 0;
+          }
+        });
+
+        const totalRow = sheet.addRow({
+          merchant: "GRAND TOTAL:",
+          amount: total
+        });
+        totalRow.font = { bold: true };
+      }
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="Receipts_${sender.replace(/[^a-z0-9]/gi, "_")}.xlsx"`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Failed to export receipts", error);
+    res.status(500).json({ error: "failed_to_export" });
   }
 });
 
@@ -182,6 +284,24 @@ app.delete("/api/receipts/:id", async (req, res) => {
   }
 });
 
+app.get("/api/ip", (req, res) => {
+  const { networkInterfaces } = require("os");
+  const nets = networkInterfaces();
+  let ip = "127.0.0.1";
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === "IPv4" && !net.internal && net.address.startsWith("192.168.")) {
+        ip = net.address;
+        break;
+      }
+    }
+  }
+  res.json({ ip, port: PORT });
+});
+
+/* ============================================================================
+   START SERVER
+   ========================================================================= */
 function startServer() {
   app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
