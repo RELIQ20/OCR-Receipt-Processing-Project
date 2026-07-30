@@ -185,7 +185,9 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
         </div>
 
         <div className="relative z-10 flex-1 flex items-center justify-center">
-          <CardStack name="Your Spending" balance="₱12,480.50" size="hero" autoRotate />
+          <div style={{ transform: "translateY(-28px)" }}>
+            <CardStack name="Your Spending" balance="₱12,480.50" size="hero" autoRotate />
+          </div>
         </div>
 
         <div className="relative z-10 max-w-sm">
@@ -261,8 +263,21 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
             )}
           </AnimatePresence>
 
-          {mode === "login" ? (
-            <form onSubmit={handleLogin} className="space-y-3.5" noValidate>
+          {/* Both forms live in the same grid cell (grid-area 1/1) so the row's height
+              is always the taller (signup) form's height, even while login is showing.
+              That keeps the submit button and the "switch mode" link below it pinned to
+              the same spot instead of jumping up when the shorter login form is active. */}
+          <div className="grid">
+            <form
+              onSubmit={handleLogin}
+              noValidate
+              className="space-y-3.5"
+              style={{
+                gridArea: "1 / 1",
+                visibility: mode === "login" ? "visible" : "hidden",
+                pointerEvents: mode === "login" ? "auto" : "none",
+              }}
+            >
               <Field
                 icon={Mail}
                 type="text"
@@ -284,21 +299,31 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5C6B65]"
                   onClick={() => setShowPassword((value) => !value)}
+                  tabIndex={mode === "login" ? 0 : -1}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || mode !== "login"}
                 className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold"
                 style={{ background: t.green, color: "#fff" }}
               >
                 {loading ? <Loader2 className="animate-spin" size={16} /> : "Continue"}
               </button>
             </form>
-          ) : (
-            <form onSubmit={handleSignup} className="space-y-3.5" noValidate>
+
+            <form
+              onSubmit={handleSignup}
+              noValidate
+              className="space-y-3.5"
+              style={{
+                gridArea: "1 / 1",
+                visibility: mode === "signup" ? "visible" : "hidden",
+                pointerEvents: mode === "signup" ? "auto" : "none",
+              }}
+            >
               <div className="grid grid-cols-2 gap-3.5">
                 <Field
                   icon={User}
@@ -346,6 +371,7 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5C6B65]"
                   onClick={() => setShowPassword((value) => !value)}
+                  tabIndex={mode === "signup" ? 0 : -1}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -360,14 +386,14 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
               />
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || mode !== "signup"}
                 className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold"
                 style={{ background: t.green, color: "#fff" }}
               >
                 {loading ? <Loader2 className="animate-spin" size={16} /> : "Create account"}
               </button>
             </form>
-          )}
+          </div>
 
           <div className="mt-6 text-center text-sm" style={{ color: t.textMuted }}>
             {mode === "login" ? (

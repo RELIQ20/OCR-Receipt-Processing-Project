@@ -82,6 +82,10 @@ async function listReceipts() {
 
 async function createReceipt(data) {
   const payload = normalizeMessage(data);
+  // New submissions always enter the pipeline as "Processing", no matter what
+  // status the caller (e.g. the WhatsApp OpenClaw bot) sends in the payload.
+  // Status is only meant to change later, via PUT /api/receipts/:id.
+  payload.status = "Processing";
 
   if (isMongoConnected) {
     const created = await Receipt.create(payload);
