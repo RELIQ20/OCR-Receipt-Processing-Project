@@ -41,6 +41,7 @@ function normalizeItem(item) {
 function normalizeReceiptEntry(entry) {
   return {
     merchant_name: entry?.merchant_name ?? "Unknown merchant",
+    category: entry?.category ?? "Others",
     date: entry?.date ?? "",
     time: entry?.time ?? "",
     total_amount: Number(entry?.total_amount) || 0,

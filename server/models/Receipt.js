@@ -13,6 +13,7 @@ const itemSchema = new mongoose.Schema(
 const receiptEntrySchema = new mongoose.Schema(
   {
     merchant_name: { type: String, required: true },
+    category: { type: String, default: "Others" },
     date: { type: String, required: true }, // "YYYY-MM-DD"
     time: { type: String }, // "HH:MM"
     total_amount: { type: Number, required: true },

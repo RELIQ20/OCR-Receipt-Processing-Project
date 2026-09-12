@@ -30,6 +30,7 @@ import {
   Users,
   LogOut,
   User,
+  Coffee, Briefcase, Wrench, Plane, Heart, Box
 } from "lucide-react";
 import { CardCarousel, type CarouselCard } from "./CardCarousel";
 import { ChatAssistant } from "./ChatAssistant";
@@ -113,6 +114,7 @@ interface ReceiptItem {
 
 interface ReceiptEntry {
   merchant_name: string;
+  category?: string;
   date: string; // "YYYY-MM-DD"
   time?: string; // "HH:MM"
   total_amount: number;
@@ -161,6 +163,7 @@ interface FlatRow {
   messageId: string;
   sender: string;
   merchant: string;
+  category: string;
   amount: number;
   currency: string;
   date: string;
@@ -179,6 +182,16 @@ const RANGES: { key: DateRange; label: string }[] = [
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
   { key: "yearly", label: "Yearly" },
+];
+
+const CATEGORY_FILTERS: { key: "all" | string; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "food & dining", label: "Food" },
+  { key: "equipment", label: "Equipment" },
+  { key: "office supplies", label: "Office Supplies" },
+  { key: "travel", label: "Travel" },
+  { key: "health & wellness", label: "Health" },
+  { key: "others", label: "Others" },
 ];
 
 const STATUS_FILTERS: { key: "all" | string; label: string }[] = [
@@ -221,6 +234,20 @@ function dateTime(iso: string) {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+/** Category → color + icon, resolved against the active theme. */
+function categoryMeta(t: ThemeTokens, category?: string) {
+  const key = (category || "").trim().toLowerCase();
+  const map: Record<string, { label: string; tone: string; icon: any }> = {
+    "food & dining": { label: "Food & Dining", tone: t.green, icon: Coffee },
+    "equipment": { label: "Equipment", tone: t.blue, icon: Wrench },
+    "office supplies": { label: "Office Supplies", tone: t.accent, icon: Briefcase },
+    "travel": { label: "Travel", tone: t.blue, icon: Plane },
+    "health & wellness": { label: "Health & Wellness", tone: t.danger, icon: Heart },
+    "others": { label: "Others", tone: t.textMuted, icon: Box },
+  };
+  return map[key] ?? { label: category || "Others", tone: t.textMuted, icon: Box };
+}
+
 /** Status → color + icon, resolved against the active theme and tolerant of unknown status strings. */
 function statusMeta(t: ThemeTokens, status: string) {
   const key = (status || "").trim().toLowerCase();
@@ -236,7 +263,7 @@ function flattenReceipts(messages: ReceiptMessage[]): FlatRow[] {
   const rows: FlatRow[] = [];
   messages.forEach((m) => {
     m.receipts.forEach((r) => {
-      rows.push({ messageId: m.id, sender: m.sender_name, merchant: r.merchant_name, amount: r.total_amount, currency: r.currency, date: r.date, time: r.time, status: m.status });
+      rows.push({ messageId: m.id, sender: m.sender_name, merchant: r.merchant_name, category: r.category || "Others", amount: r.total_amount, currency: r.currency, date: r.date, time: r.time, status: m.status });
     });
   });
   return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -638,8 +665,8 @@ function ToastStack({ t, toasts, onOpenReceipt }: { t: ThemeTokens; toasts: AppN
 function TransactionHistoryChart({ data, t }: { data: { label: string; value: number; count?: number }[]; t: ThemeTokens }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const W = 640;
-  const H = 240;
-  const PAD_TOP = 64;
+  const H = 190;
+  const PAD_TOP = 48;
   const PAD_BOTTOM = 24;
   const PAD_X = 24;
   const max = Math.max(1, ...data.map((d) => d.value));
@@ -758,6 +785,94 @@ function TransactionHistoryChart({ data, t }: { data: { label: string; value: nu
    PIPELINE STATUS + RECENT STATUS STRIP
    ========================================================================= */
 
+function CategoryDonutChart({ flatRows, t }: { flatRows: FlatRow[]; t: ThemeTokens }) {
+  const data = useMemo(() => {
+    const totals: Record<string, number> = {};
+    let sum = 0;
+    flatRows.forEach((r) => {
+      const c = r.category || "Others";
+      totals[c] = (totals[c] || 0) + r.amount;
+      sum += r.amount;
+    });
+    return Object.entries(totals)
+      .map(([cat, val]) => ({
+        category: cat,
+        value: val,
+        percentage: sum ? (val / sum) * 100 : 0,
+        meta: categoryMeta(t, cat),
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [flatRows, t]);
+
+  if (data.length === 0) return null;
+
+  let currentOffset = 0;
+  const radius = 60;
+  const circumference = 2 * Math.PI * radius;
+
+  return (
+    <div className="flex flex-col space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-base">Category Allocation</h3>
+      </div>
+      
+      <div className="flex flex-col items-center gap-6">
+        <div className="relative w-40 h-40">
+          <svg viewBox="0 0 160 160" className="w-full h-full transform -rotate-90">
+            {data.map((d) => {
+              const strokeLength = (d.percentage / 100) * circumference;
+              const gap = data.length > 1 && d.percentage > 0 ? 2 : 0;
+              const strokeDasharray = `${Math.max(0, strokeLength - gap)} ${circumference}`;
+              const strokeDashoffset = -currentOffset;
+              currentOffset += strokeLength;
+              return (
+                <motion.circle
+                  key={d.category}
+                  initial={{ strokeDasharray: `0 ${circumference}` }}
+                  animate={{ strokeDasharray }}
+                  transition={{ duration: 1, ease: "easeOut" }}
+                  cx="80"
+                  cy="80"
+                  r={radius}
+                  fill="transparent"
+                  stroke={d.meta.tone}
+                  strokeWidth="20"
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap={gap ? "round" : "butt"}
+                />
+              );
+            })}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+             <span className="text-[10px] font-bold" style={{ color: t.textMuted }}>TOTAL</span>
+             <span className="text-sm font-extrabold" style={{ color: t.text }}>
+               {formatAmount(data.reduce((acc, d) => acc + d.value, 0))}
+             </span>
+          </div>
+        </div>
+        
+        <div className="w-full space-y-2">
+          {data.map(d => {
+            const Icon = d.meta.icon;
+            return (
+              <div key={d.category} className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: d.meta.tone }} />
+                  <span className="font-medium" style={{ color: t.text }}>{d.meta.label}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold" style={{ color: t.text }}>{formatAmount(d.value)}</span>
+                  <span className="text-[10px] font-bold w-8 text-right opacity-60" style={{ color: t.textMuted }}>{Math.round(d.percentage)}%</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PipelineStatus({ counts, t }: { counts: Record<string, number>; t: ThemeTokens }) {
   const ORDER = ["total", "processing", "confirmed"];
   const SUBTITLES: Record<string, string> = {
@@ -771,8 +886,8 @@ function PipelineStatus({ counts, t }: { counts: Record<string, number>; t: Them
         const m = statusMeta(t, key);
         const Icon = m.icon;
         return (
-          <div key={key} className="flex flex-col justify-between rounded-2xl p-6 shadow-sm transition-all hover:shadow-md border" style={{ background: t.surface, borderColor: t.border }}>
-            <div className="flex items-start justify-between mb-4">
+          <div key={key} className="flex flex-col justify-between rounded-2xl p-5 shadow-sm transition-all hover:shadow-md border" style={{ background: t.surface, borderColor: t.border }}>
+            <div className="flex items-start justify-between mb-2">
               <p className="text-xs font-bold tracking-wider uppercase mt-1" style={{ color: t.textMuted }}>
                 {m.label}
               </p>
@@ -792,35 +907,7 @@ function PipelineStatus({ counts, t }: { counts: Record<string, number>; t: Them
   );
 }
 
-function StatusUpdateStrip({ receipts, t, onOpen }: { receipts: ReceiptMessage[]; t: ThemeTokens; onOpen: (id: string) => void }) {
-  const recent = receipts.slice(0, 8);
-  if (recent.length === 0) return null;
 
-  return (
-    <section className="rounded-2xl p-6 border" style={{ background: t.surface, borderColor: t.border }}>
-      <p className="text-xs font-bold tracking-wider uppercase mb-4" style={{ color: t.textMuted }}>
-        Recent Status Updates
-      </p>
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {recent.map((m) => {
-          const meta = statusMeta(t, m.status);
-          const Icon = meta.icon;
-          return (
-            <button key={m.id} onClick={() => onOpen(m.id)} className="flex items-center gap-2 shrink-0 rounded-full px-3 py-1.5" style={{ background: t.surfaceAlt }}>
-              <Icon size={11} color={meta.tone} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
-              <span className="text-[11px]" style={{ color: t.text }}>
-                {m.sender_name}
-              </span>
-              <span className="text-[10px]" style={{ color: t.textMuted }}>
-                {formatAmount(m.grand_total, m.receipts[0]?.currency)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
 
 /* ============================================================================
    QUICK STATUS DROPDOWN
@@ -896,6 +983,7 @@ function ReceiptInboxView({
   const [selectedId, setSelectedId] = useState<string | null>(receipts[0]?.id ?? null);
   const [isEditing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ReceiptMessage | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   useEffect(() => {
     if (focusId) setSelectedId(focusId);
@@ -917,6 +1005,17 @@ function ReceiptInboxView({
   }, [receipts, filterStatus, query]);
 
   const selected = receipts.find((m) => m.id === selectedId) ?? (filterStatus === "processing" ? filtered[0] : null);
+
+  useEffect(() => {
+    setActiveImageIndex(0);
+    if (selected?.id) {
+      try {
+        const viewed = new Set(JSON.parse(localStorage.getItem('viewedReceipts') || '[]'));
+        viewed.add(selected.id);
+        localStorage.setItem('viewedReceipts', JSON.stringify([...viewed]));
+      } catch (e) {}
+    }
+  }, [selected?.id]);
 
   const startEdit = () => {
     if (selected) {
@@ -1033,7 +1132,7 @@ function ReceiptInboxView({
                   Save
                 </button>
                 <button onClick={cancelEdit} className="flex items-center justify-center gap-2 px-5 py-2 rounded-full text-sm font-bold text-white shadow-sm" style={{ background: t.danger }}>
-                  <X size={16} />
+              <X size={16} />
                   Cancel
                 </button>
               </>
@@ -1043,104 +1142,155 @@ function ReceiptInboxView({
 
         {/* Split Container */}
         <div className="flex-1 rounded-2xl overflow-y-auto flex flex-col gap-6 p-2 lg:p-6" style={{ background: 'transparent' }}>
-          {(isEditing ? draft : selected)!.receipts.map((r, rIndex) => (
-            <div key={rIndex} className="flex flex-col min-h-0 gap-8 lg:flex-row items-start">
-              
-              {/* Left Column: Image Preview */}
-              <div className="w-full lg:w-1/2 lg:sticky lg:top-0 lg:h-[75vh] flex items-start justify-center">
-                {r.drive_link ? (
-                  <ReceiptPhotoPreview link={r.drive_link} merchant={r.merchant_name} t={t} />
-                ) : (
-                  <div className="text-sm opacity-50 flex items-center justify-center h-64 w-full bg-black/5 rounded-2xl">No image provided</div>
-                )}
-              </div>
-              
-              {/* Right Column: Physical Receipt Styled Data */}
-              <div className="w-full lg:w-1/2 flex justify-center py-4" style={{ filter: 'drop-shadow(0 20px 25px rgba(0,0,0,0.2)) drop-shadow(0 8px 10px rgba(0,0,0,0.1))' }}>
-                <div 
-                  className="w-full max-w-sm flex flex-col relative p-6 lg:p-8"
-                  style={{ 
-                    backgroundColor: '#fdfaf2',
-                    color: '#2a2a2a',
-                    fontFamily: '"Courier New", Courier, monospace'
-                  }}
-                >
-                  {/* Perforated top edge */}
-                  <div className="absolute top-0 left-0 right-0 h-2" style={{ 
-                    marginTop: '-8px',
-                    backgroundSize: '16px 8px', 
-                    backgroundImage: 'radial-gradient(circle at 50% 0, transparent 4px, #fdfaf2 5px)', 
-                  }}></div>
+          {(() => {
+            const data = (isEditing ? draft : selected)!;
+            if (data.receipts.length === 0) return null;
+            const activeReceipt = data.receipts[activeImageIndex] || data.receipts[0];
+            const primaryReceipt = data.receipts[0]; // Used for header info
 
-                  <div className="relative z-20 flex flex-col">
-                    <div className="text-center mb-6 border-b-2 border-dashed border-gray-300 pb-6">
-                      {isEditing ? (
-                        <input 
-                          value={r.merchant_name} 
-                          onChange={(e) => updateDraftReceipt(rIndex, "merchant_name", e.target.value)} 
-                          className="font-bold text-xl rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50 w-full text-center mb-2" 
-                        />
-                      ) : (
-                        <h3 className="font-bold text-2xl uppercase tracking-wider mb-2 text-gray-800">
-                          {r.merchant_name}
-                        </h3>
-                      )}
-                      
-                      <div className="text-sm text-gray-500 font-mono flex items-center justify-center gap-2">
-                        {isEditing ? (
-                          <div className="flex gap-2 justify-center">
-                            <input type="date" value={r.date} onChange={(e) => updateDraftReceipt(rIndex, "date", e.target.value)} className="rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
-                            <input type="time" value={r.time ?? ''} onChange={(e) => updateDraftReceipt(rIndex, "time", e.target.value)} className="rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
-                          </div>
-                        ) : (
-                          <>{dateOnly(r.date)} {r.time ? `· ${r.time}` : ""}</>
-                        )}
-                      </div>
+            return (
+              <div className="flex flex-col min-h-0 gap-8 lg:flex-row items-start">
+                
+                {/* Left Column: Image Carousel */}
+                <div className="w-full lg:w-1/2 lg:sticky lg:top-0 flex flex-col items-center">
+                  <div className="w-full flex items-start justify-center lg:h-[70vh]">
+                    {activeReceipt.drive_link ? (
+                      <ReceiptPhotoPreview link={activeReceipt.drive_link} merchant={activeReceipt.merchant_name} t={t} />
+                    ) : (
+                      <div className="text-sm opacity-50 flex items-center justify-center h-64 w-full bg-black/5 rounded-2xl">No image provided</div>
+                    )}
+                  </div>
+                  {data.receipts.length > 1 && (
+                    <div className="flex items-center gap-4 mt-6">
+                      <button 
+                        onClick={() => setActiveImageIndex((i) => Math.max(0, i - 1))}
+                        disabled={activeImageIndex === 0}
+                        className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-100 disabled:opacity-30 transition-colors hover:bg-gray-200 text-gray-700"
+                      >
+                        <ArrowLeft size={16} />
+                      </button>
+                      <span className="text-sm font-semibold text-gray-500">
+                        {activeImageIndex + 1} of {data.receipts.length}
+                      </span>
+                      <button 
+                        onClick={() => setActiveImageIndex((i) => Math.min(data.receipts.length - 1, i + 1))}
+                        disabled={activeImageIndex === data.receipts.length - 1}
+                        className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-100 disabled:opacity-30 transition-colors hover:bg-gray-200 text-gray-700"
+                      >
+                        <ArrowRight size={16} />
+                      </button>
                     </div>
+                  )}
+                </div>
+                
+                {/* Right Column: Combined Physical Receipt Styled Data */}
+                <div className="w-full lg:w-1/2 flex justify-center py-4" style={{ filter: 'drop-shadow(0 20px 25px rgba(0,0,0,0.2)) drop-shadow(0 8px 10px rgba(0,0,0,0.1))' }}>
+                  <div 
+                    className="w-full max-w-sm flex flex-col relative p-6 lg:p-8"
+                    style={{ 
+                      backgroundColor: '#fdfaf2',
+                      backgroundImage: 'url("https://www.transparenttextures.com/patterns/cream-paper.png")',
+                      color: '#000000',
+                      boxShadow: 'inset 0 0 40px rgba(0,0,0,0.03)',
+                    }}
+                  >
+                    {/* Perforated top edge */}
+                    <div className="absolute top-0 left-0 right-0 h-2" style={{ 
+                      marginTop: '-8px',
+                      backgroundSize: '16px 8px', 
+                      backgroundImage: 'radial-gradient(circle at 50% 0, transparent 4px, #fdfaf2 5px)', 
+                    }}></div>
 
-                    <div className="space-y-4 font-mono text-sm pb-4">
-                      {r.items.length > 0 && r.items.map((it, ii) => (
-                        <div key={ii} className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-h-0">
+                      <div className="text-center mb-8 pb-6 border-b-2 border-dashed border-gray-300">
+                        {isEditing ? (
+                          <input value={primaryReceipt.merchant_name} onChange={(e) => updateDraftReceipt(0, "merchant_name", e.target.value)} className="font-bold text-2xl uppercase tracking-wider mb-2 text-center w-full bg-gray-50 border border-gray-200 rounded p-1" />
+                        ) : (
+                          <h3 className="font-bold text-2xl uppercase tracking-wider mb-2 text-gray-800">
+                            {primaryReceipt.merchant_name}
+                          </h3>
+                        )}
+                        
+                        <div className="text-sm text-gray-500 font-mono flex items-center justify-center gap-2">
                           {isEditing ? (
-                            <>
-                              <input value={it.description} onChange={(e) => updateDraftItem(rIndex, ii, "description", e.target.value)} className="flex-1 rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
-                              <input type="number" value={it.price} onChange={(e) => updateDraftItem(rIndex, ii, "price", parseFloat(e.target.value))} className="w-20 rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50 text-right" />
-                              <button onClick={() => removeDraftItem(rIndex, ii)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
-                            </>
+                            <div className="flex gap-2 justify-center">
+                              <input type="date" value={primaryReceipt.date} onChange={(e) => updateDraftReceipt(0, "date", e.target.value)} className="rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
+                              <input type="time" value={primaryReceipt.time ?? ''} onChange={(e) => updateDraftReceipt(0, "time", e.target.value)} className="rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
+                            </div>
                           ) : (
-                            <>
-                              <span className="uppercase flex-1 pr-4" style={{ color: '#333' }}>{it.description}</span>
-                              <span className="font-semibold" style={{ color: '#000' }}>
-                                {formatAmount(it.price, r.currency)}
-                              </span>
-                            </>
+                            <>{dateOnly(primaryReceipt.date)} {primaryReceipt.time ? `· ${primaryReceipt.time}` : ""}</>
                           )}
                         </div>
-                      ))}
-                      {isEditing && (
-                        <button onClick={() => addDraftItem(rIndex)} className="text-xs font-bold mt-4 flex items-center gap-1 text-green-700 hover:bg-green-50 px-2 py-1 rounded"><Plus size={14}/> ADD ITEM</button>
-                      )}
+
+                        <div className="mt-3 flex justify-center">
+                          {isEditing ? (
+                            <select 
+                              value={primaryReceipt.category ?? "Others"}
+                              onChange={(e) => updateDraftReceipt(0, "category", e.target.value)}
+                              className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full outline-none border border-gray-200 bg-gray-50 text-gray-700"
+                            >
+                              <option value="Food & Dining">Food & Dining</option>
+                              <option value="Equipment">Equipment</option>
+                              <option value="Office Supplies">Office Supplies</option>
+                              <option value="Travel">Travel</option>
+                              <option value="Health & Wellness">Health & Wellness</option>
+                              <option value="Others">Others</option>
+                            </select>
+                          ) : (
+                            <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200/60 shadow-sm">
+                              {primaryReceipt.category ?? "Others"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 font-mono text-sm pb-4">
+                        {data.receipts.flatMap((r, rIndex) => 
+                          r.items.map((it, ii) => (
+                            <div key={`${rIndex}-${ii}`} className="flex items-start justify-between gap-3">
+                              {isEditing ? (
+                                <>
+                                  <input value={it.description} onChange={(e) => updateDraftItem(rIndex, ii, "description", e.target.value)} className="flex-1 rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50" />
+                                  <input type="number" value={it.price} onChange={(e) => updateDraftItem(rIndex, ii, "price", parseFloat(e.target.value))} className="w-20 rounded px-2 py-1 outline-none border border-gray-200 bg-gray-50 text-right" />
+                                  <button onClick={() => removeDraftItem(rIndex, ii)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="uppercase flex-1 pr-4" style={{ color: '#333' }}>{it.description}</span>
+                                  <span className="font-semibold" style={{ color: '#000' }}>
+                                    {formatAmount(it.price, primaryReceipt.currency)}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          ))
+                        )}
+                        
+                        {isEditing && (
+                          <button onClick={() => addDraftItem(data.receipts.length - 1)} className="text-xs font-bold mt-4 flex items-center gap-1 text-green-700 hover:bg-green-50 px-2 py-1 rounded"><Plus size={14}/> ADD ITEM</button>
+                        )}
+                      </div>
+                      
+                      <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-300">
+                         <div className="flex items-center justify-between font-bold text-lg text-gray-900">
+                           <span className="uppercase tracking-widest">Total</span>
+                           <span>{formatAmount(data.grand_total, primaryReceipt.currency)}</span>
+                         </div>
+                      </div>
                     </div>
                     
-                    <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-300">
-                       <div className="flex items-center justify-between font-bold text-lg text-gray-900">
-                         <span className="uppercase tracking-widest">Total</span>
-                         <span>{formatAmount((isEditing ? draft : selected)!.grand_total, (isEditing ? draft : selected)!.receipts[0]?.currency)}</span>
-                       </div>
-                    </div>
+                    {/* Perforated bottom edge */}
+                    <div className="absolute bottom-0 left-0 right-0 h-2" style={{ 
+                      marginBottom: '-8px',
+                      backgroundSize: '16px 8px', 
+                      backgroundImage: 'radial-gradient(circle at 50% 100%, transparent 4px, #fdfaf2 5px)', 
+                    }}></div>
+                    
                   </div>
-                  
-                  {/* Perforated bottom edge */}
-                  <div className="absolute bottom-0 left-0 right-0 h-2" style={{ 
-                    marginBottom: '-8px',
-                    backgroundSize: '16px 8px', 
-                    backgroundImage: 'radial-gradient(circle at 50% 100%, transparent 4px, #fdfaf2 5px)', 
-                  }}></div>
-                  
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })()}
         </div>
       </div>
     );
@@ -1228,8 +1378,19 @@ function ReceiptInboxView({
                               {m.receipts.length} Receipt{m.receipts.length > 1 ? 's' : ''}
                             </span>
                           </td>
-                          <td className="px-6 py-5 border-b text-right font-bold whitespace-nowrap" style={{ borderColor: t.border, color: t.text }}>
-                            {formatAmount(m.grand_total, m.receipts[0]?.currency)}
+                          <td className="px-6 py-5 border-b text-right whitespace-nowrap" style={{ borderColor: t.border }}>
+                            <div className="flex items-center justify-end gap-3">
+                              <span className="font-bold" style={{ color: t.text }}>
+                                {formatAmount(m.grand_total, m.receipts[0]?.currency)}
+                              </span>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onDelete(m.id); }}
+                                className="p-1.5 rounded-lg transition-colors group/del hover:bg-red-50"
+                                title="Delete Record"
+                              >
+                                <Trash2 size={15} className="text-gray-300 group-hover/del:text-red-500 transition-colors" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1405,6 +1566,15 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
         const prevById = new Map(receiptsRef.current.map((m) => [m.id, m]));
         incoming.forEach((m) => {
           const prev = prevById.get(m.id);
+          
+          let isViewed = false;
+          try {
+            const viewed = new Set(JSON.parse(localStorage.getItem('viewedReceipts') || '[]'));
+            isViewed = viewed.has(m.id);
+          } catch(e) {}
+
+          if (isViewed) return;
+
           if (!prev) {
             pushNotification({ type: "new_receipt", title: "New receipt received", detail: `${m.sender_name} — ${formatAmount(m.grand_total, m.receipts[0]?.currency)}`, receiptId: m.id });
           } else if (prev.status !== m.status) {
@@ -1577,12 +1747,12 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
   const q = query.trim().toLowerCase();
   const visibleRows = flatRows
-    .filter((r) => (sidebarFilter === "all" ? true : r.status.trim().toLowerCase() === sidebarFilter))
-    .filter((r) => (q ? [r.sender, r.merchant, r.status, dateOnly(r.date)].join(" ").toLowerCase().includes(q) : true));
+    .filter((r) => (sidebarFilter === "all" ? true : r.category.trim().toLowerCase() === sidebarFilter))
+    .filter((r) => (q ? [r.sender, r.merchant, r.category, r.status, dateOnly(r.date)].join(" ").toLowerCase().includes(q) : true));
 
   const openInboxCount = receipts.filter((m) => m.status.trim().toLowerCase() !== "confirmed").length;
 
-  const SIDEBAR_FILTERS = STATUS_FILTERS;
+  const SIDEBAR_FILTERS = CATEGORY_FILTERS;
 
   if (!receiptsLoaded) {
     return (
@@ -1613,7 +1783,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
             </div>
           ) : (
             <div className="w-full h-14 rounded-2xl bg-white shadow-sm overflow-hidden flex items-center justify-center">
-              <img src="/logo.jpeg" alt="LifeRCP Logo" className="w-full h-full object-cover object-center scale-[0.80]" />
+              <img src="/logo.jpeg" alt="LifeRCP Logo" className="w-full h-full object-contain object-center scale-[0.80]" />
             </div>
           )}
         </div>
@@ -1686,19 +1856,6 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
         {/* BOTTOM PROFILE / ACTIONS */}
         <div className="p-3 pb-8 flex flex-col gap-4">
-          {/* Lifewood Logo Pill */}
-          {isCollapsed ? (
-            <div className="w-14 h-14 rounded-[20px] bg-white shadow-sm flex items-center justify-center mx-auto shrink-0 mb-2">
-              <div className="w-[16px] h-[38px] overflow-hidden relative">
-                <img src="/lifewood-logo.png" alt="Lifewood" className="absolute left-[-2px] top-0 h-full w-auto max-w-none" />
-              </div>
-            </div>
-          ) : (
-            <div className="w-full bg-white rounded-2xl h-14 flex items-center justify-center shadow-sm p-1.5 overflow-hidden">
-              <img src="/lifewood-logo.png" alt="Lifewood" className="w-full h-full object-contain object-center scale-[0.85]" />
-            </div>
-          )}
-
           <div className={`flex items-center rounded-2xl transition-all p-3 ${isCollapsed ? 'flex-col gap-4' : 'gap-3'}`} style={{ background: '#1c3629', border: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center font-bold text-[15px] uppercase" style={{ background: '#0a4226', color: '#fff' }}>
               {currentUser ? `${currentUser.firstName?.[0] || ""}${currentUser.lastName?.[0] || ""}` : "NL"}
@@ -1779,10 +1936,12 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                 </div>
 
                 {/* BOTTOM CONTENT (SPLIT) */}
-                <div className="flex-1 flex flex-col lg:flex-row gap-6 px-8 min-h-0 shrink-0">
+                <div className="flex-1 flex flex-col gap-6 px-8 min-h-0 shrink-0">
                   
-                  {/* LEFT MAIN CONTENT */}
-                  <div className="flex-1 flex flex-col min-w-0 space-y-6">
+                  {/* TOP ROW */}
+                  <div className="flex flex-col lg:flex-row gap-6 shrink-0">
+                    {/* LEFT MAIN CONTENT */}
+                    <div className="flex-1 flex flex-col min-w-0 space-y-6">
                     {/* SEARCH BAR */}
                     <div className="shrink-0">
                       <div className="flex items-center gap-3 px-5 py-3.5 rounded-2xl border shadow-sm transition-shadow focus-within:shadow-md" style={{ background: t.surface, borderColor: t.border }}>
@@ -1804,7 +1963,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
                     <PipelineStatus counts={pipelineCounts} t={t} />
 
-                    <section className="rounded-2xl p-6 transition-colors duration-500 shadow-sm" style={{ background: t.surface, border: `1px solid ${t.border}` }}>
+                    <section className="rounded-2xl p-5 transition-colors duration-500 shadow-sm" style={{ background: t.surface, border: `1px solid ${t.border}` }}>
                       <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
                         <p className="text-sm font-semibold" style={{ color: t.textMuted }}>
                           Transaction Receipt History <span style={{ color: t.textMuted, opacity: 0.6 }}>· All senders</span>
@@ -1833,10 +1992,9 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
 
                       <TransactionHistoryChart key={JSON.stringify(chartData)} data={chartData} t={t} />
                     </section>
-                    <StatusUpdateStrip receipts={receipts} t={t} onOpen={openReceipt} />
                   </div>
 
-                  {/* RIGHT SIDEBAR */}
+                  {/* RIGHT SIDEBAR (Top) */}
                   <aside className="w-full lg:w-[360px] xl:w-[400px] flex-shrink-0 flex flex-col space-y-2">
                     {/* MACHINE SECTION (No Card Background) */}
                     <div className="flex flex-col px-2 pb-0">
@@ -1848,9 +2006,22 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                         </div>
                       )}
                     </div>
+                  </aside>
+                </div>
 
-                    {/* FILTERS & RECEIPTS (Inside the card) */}
-                    <div className="p-6 rounded-2xl border transition-colors duration-500 shadow-sm flex flex-col space-y-5" style={{ background: t.surface, borderColor: t.border }}>
+                {/* BOTTOM ROW */}
+                <div className="flex flex-col lg:flex-row gap-6 shrink-0 items-stretch pb-6">
+                  {/* LEFT BOTTOM CONTENT */}
+                  <div className="flex-1 flex flex-col min-w-0">
+                    {/* FILTERS & RECEIPTS */}
+                    <div className="p-6 rounded-2xl border transition-colors duration-500 shadow-sm flex flex-col space-y-5 h-full" style={{ background: t.surface, borderColor: t.border }}>
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-bold text-base">Transaction History</h3>
+                        <span className="text-xs font-semibold" style={{ color: t.accent }}>
+                          {visibleRows.length} total
+                        </span>
+                      </div>
+
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {SIDEBAR_FILTERS.map((f) => (
                           <button
@@ -1864,18 +2035,11 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                         ))}
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-bold text-sm">Recent Receipts</h3>
-                        <span className="text-xs font-semibold" style={{ color: t.accent }}>
-                          {visibleRows.length} total
-                        </span>
-                      </div>
-
-                      <div className="space-y-1">
+                      <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
                         {visibleRows.slice(0, 5).map((row, i) => {
-                          const meta = statusMeta(t, row.status);
+                          const meta = categoryMeta(t, row.category);
                           return (
-                            <button key={`${row.messageId}_${i}`} onClick={() => openReceipt(row.messageId)} className="w-full flex items-center justify-between px-2 py-3 rounded-xl transition-colors text-left hover:opacity-90">
+                            <button key={`${row.messageId}_${i}`} onClick={() => openReceipt(row.messageId)} className="w-full flex items-center justify-between px-2 py-1.5 rounded-xl transition-colors text-left hover:opacity-90">
                               <div className="flex items-center gap-3 min-w-0">
                                 <div className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0" style={{ background: t.green, color: "#fff" }}>
                                   {row.merchant.charAt(0)}
@@ -1897,7 +2061,7 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                                   {formatAmount(row.amount, row.currency)}
                                 </span>
                                 <span className="flex items-center gap-1 text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ color: meta.tone, background: `${meta.tone}1a` }}>
-                                  <meta.icon size={9} className={meta.spin ? "animate-spin" : meta.pulse ? "animate-pulse" : ""} />
+                                  <meta.icon size={9} />
                                   {meta.label}
                                 </span>
                               </div>
@@ -1911,8 +2075,16 @@ export default function LifeReceiptDashboard({ currentUser, onLogout }: { curren
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  {/* RIGHT BOTTOM CONTENT */}
+                  <aside className="w-full lg:w-[360px] xl:w-[400px] flex-shrink-0 flex flex-col">
+                    <div className="p-6 rounded-2xl border transition-colors duration-500 shadow-sm flex flex-col h-full" style={{ background: t.surface, borderColor: t.border }}>
+                      <CategoryDonutChart flatRows={flatRows} t={t} />
+                    </div>
                   </aside>
                 </div>
+              </div>
               </motion.div>
         )}
       </AnimatePresence>
